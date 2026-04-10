@@ -48,7 +48,7 @@ let fulfill (offer : 'a offer) (v : 'a) : bool =
 let is_pending (offer : 'a offer) : bool =
   match Atomic.get offer.status with Pending -> true | _ -> false
 
-(** Block until the offer is fulfilled or rescinded. Returns the result. *)
+(** Block until the offer is fulfilled. Returns the result. *)
 let await (offer : 'a offer) : 'a option =
   Mutex.lock offer.mutex;
   while Atomic.get offer.status = Pending do
@@ -89,7 +89,7 @@ let mk_chan () : ('a, 'b) endpoint * ('b, 'a) endpoint =
    Swap
    ────────────────────────────────────────────────────────────────────────── *)
 
-(** Remove fulfilled/rescinded messages from the front of a queue. *)
+(** Remove non-pending messages from the front of a queue. *)
 let clean (q : ('a, 'b) message Queue.t) : unit =
   let rec loop () =
     match Queue.peek_opt q with
@@ -117,7 +117,7 @@ let swap (ep : ('a, 'b) endpoint) (v : 'a) : 'b =
         (* Success — the partner gets our value, we get theirs. *)
         msg.payload
       else
-        (* The partner's offer was already fulfilled/rescinded. Try next. *)
+        (* The partner's offer was already fulfilled by another domain. Try next. *)
         try_match ()
     | None ->
       (* No partner yet. Post our offer and wait. *)
@@ -128,7 +128,7 @@ let swap (ep : ('a, 'b) endpoint) (v : 'a) : 'b =
       match await offer with
       | Some result -> result
       | None ->
-        (* Offer was rescinded (shouldn't happen in normal use). Retry. *)
+        (* Unreachable: await only returns after fulfillment. *)
         try_match ()
   in
   try_match ()

@@ -3,8 +3,8 @@
     A reagent [('a, 'b) t] is a function from input + transaction log to
     output. It is literally [fun (a : 'a) (xt : Xt.t) -> ... : 'b].
 
-    This module is ~30 lines of code on top of [Xt]. Sequencing is function
-    composition. Choice is [Xt.or_else]. Blocking is [Xt.retry]. *)
+    Sequencing is function composition. Choice is [Xt.or_else].
+    Blocking is [Xt.retry]. *)
 
 type 'a ref = 'a Kcas.loc
 

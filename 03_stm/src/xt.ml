@@ -101,8 +101,8 @@ let retry () = raise Retry
 
 (** [or_else tx1 tx2 ~xt] runs [tx1]. If it calls [retry], rolls back the
     log entries added by [tx1] and runs [tx2]. If both retry, the [Retry]
-    exception propagates to [commit], which blocks on the union of both
-    read sets. *)
+    propagates to [commit], which blocks on the entries from the prefix and
+    [tx2] (entries from [tx1] were rolled back). *)
 let or_else (tx1 : xt:t -> 'a) (tx2 : xt:t -> 'a) ~(xt : t) : 'a =
   let snap = xt.log in
   match tx1 ~xt with
@@ -119,21 +119,21 @@ let or_else (tx1 : xt:t -> 'a) (tx2 : xt:t -> 'a) ~(xt : t) : 'a =
     - Entries where value unchanged → CMP (read-only validation)
     - Entries where value changed → CAS (read-write) *)
 let ops_of_log (log : entry list) : Kcas.op list =
-  List.filter_map (fun (Entry (loc, initial, current)) ->
+  List.map (fun (Entry (loc, initial, current)) ->
     if !current == initial then
-      Some (Kcas.CMP (loc, initial))
+      Kcas.CMP (loc, initial)
     else
-      Some (Kcas.CAS (loc, initial, !current))
+      Kcas.CAS (loc, initial, !current)
   ) log
 
-(** Collect all locations from the log (for registering awaiters on retry). *)
+(** Build awaiter-registration functions from the log entries. *)
 let locs_of_log (log : entry list) :
     (Kcas.awaiter -> bool) list =
   List.map (fun (Entry (loc, _, _)) ->
     fun awaiter -> Kcas.add_awaiter loc awaiter
   ) log
 
-(** Block until one of the logged locations changes, then return. *)
+(** Block until an awaiter fires on one of the logged locations, then return. *)
 let block_on_log (log : entry list) : unit =
   if log = [] then ()
   else begin

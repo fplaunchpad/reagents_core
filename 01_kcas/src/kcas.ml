@@ -3,9 +3,10 @@
     Reference: "Efficient Multi-word Compare and Swap"
     by Guerraoui, Kogan, Marathe, Zablotchi (arXiv:2008.02527, DISC 2020).
 
-    This implementation follows the simplified presentation from the kcas
-    documentation (gkmz-with-read-only-cmp-ops.md), without the CMP extension
-    or any of the performance optimizations from the production kcas library.
+    This implementation follows the simplified OCaml presentation from the kcas
+    documentation, covering only the base GKMZ algorithm without the CMP
+    extension or any of the performance optimizations from the production kcas
+    library.
 
     The algorithm proceeds in two phases:
 
@@ -40,7 +41,7 @@ type 'a loc = 'a state Atomic.t
 
     - [before]: the expected (old) value
     - [after]:  the desired (new) value
-    - [mcas_desc]:   back-pointer to the owning [MCASDescriptor]'s status
+    - [mcas_desc]:   back-pointer to the operation's shared status cell
 
     Fresh [state] records are allocated per-operation to avoid ABA problems. *)
 and 'a state = {
@@ -215,7 +216,7 @@ let get (loc : 'a loc) : 'a =
     Corresponds to the entry point that builds descriptors and calls [MCAS].
 
     Implementation:
-    1. Allocate a fresh [mcas_desc] — initially set to [After] as a sentinel value.
+    1. Allocate a fresh [mcas_desc] — initially set to [After] as a placeholder.
        (This will be overwritten in step 3 before [gkmz] runs.)
     2. For each logical [CAS (loc, before, after)], create a fresh [state]
        record [{before; after; mcas_desc}]. The fresh allocation is critical for

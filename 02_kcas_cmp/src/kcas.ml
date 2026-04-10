@@ -43,7 +43,9 @@ type 'a loc = 'a state Atomic.t
 
     - [before]: the expected (old) value
     - [after]:  the desired (new) value
-    - [mcas_desc]:   back-pointer to the owning [MCASDescriptor]'s status
+    - [mcas_desc]:   back-pointer to the operation's shared status cell (for CAS),
+      or to the previous operation's status cell (for CMP — this is how [is_cmp]
+      distinguishes them)
 
     Fresh [state] records are allocated per-operation to avoid ABA problems. *)
 and 'a state = {
@@ -52,7 +54,8 @@ and 'a state = {
   mcas_desc : mcas_desc;
 }
 
-(** A word descriptor: a target location and the state to install there.
+(** A word descriptor: a target location and its associated state (installed
+    for CAS, snapshotted for CMP).
 
     Existentially quantifies ['a] so that a single list of [word_desc]s can
     reference locations of different types. *)
@@ -65,7 +68,9 @@ and word_desc = Word_desc : 'a loc * 'a state -> word_desc
     The data structure is cyclic: [mcas_desc] contains the list of [word_desc] descriptors,
     each [word_desc] contains a [state], and each [state] points back to the [mcas_desc].
     This allows traversal from any location's state back to the operation status,
-    which is essential for the helping mechanism. *)
+    which is essential for the helping mechanism. For CMP descriptors, the [state]
+    points to the {i previous} operation's [mcas_desc] — this breaks the cycle
+    intentionally, and is how [is_cmp] distinguishes CMP from CAS. *)
 and mcas_desc = status Atomic.t
 
 (** Status of a k-CAS operation.
@@ -104,7 +109,7 @@ let is_cmp mcas_desc state = state.mcas_desc != mcas_desc
 
 (** [finish mcas_desc desired] attempts to finalize the operation.
 
-    Before declaring success, verifies that all CMP locations still hold
+    When [desired] is [After], verifies that all CMP locations still hold
     their original states. If any CMP location has changed, the operation
     must fail (the read-only assertion was violated). *)
 let finish mcas_desc desired =
@@ -132,6 +137,8 @@ let finish mcas_desc desired =
     1. Read the current state from [loc].
     2. If [desired == current] (physical identity): our descriptor is already
        installed (perhaps by a helper), move on to the next word.
+    2b. If this is a CMP descriptor (detected via [is_cmp]), and the location's
+       state differs from the snapshot, finalize with failure.
     3. Otherwise, determine the logical value at [loc]:
        - Call [is_after current.mcas_desc] to check whether the previous operation
          on this location succeeded. This may recursively help that operation.
@@ -164,8 +171,8 @@ let rec gkmz mcas_desc = function
       (* Already installed (by us or a helper). Move on. *)
       gkmz mcas_desc continue
     else if is_cmp mcas_desc desired then
-      (* This is a CMP (read-only) descriptor, and the location's state
-         has changed since we took the snapshot. The assertion fails. *)
+      (* This is a CMP (read-only) descriptor, and the location's physical
+         state differs from our CMP snapshot — fail. *)
       finish mcas_desc Before
     else
       (* Determine the logical value at this location.
@@ -235,7 +242,7 @@ let get (loc : 'a loc) : 'a =
     For CAS operations: creates fresh state descriptors (with the current [mcas_desc]).
     For CMP operations: snapshots the existing state from the location (reuses
     it, so [is_cmp] will detect it by the differing [mcas_desc]). If the snapshot
-    fails (value already wrong), fails immediately via [Exit]. *)
+    is inconsistent, returns [false] immediately. *)
 let atomically (ops : op list) : bool =
   let mcas_desc = Atomic.make After in
   let word_desc =
