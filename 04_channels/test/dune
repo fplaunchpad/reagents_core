@@ -1,3 +1,11 @@
 (test
  (name test_channels)
  (libraries channels unix))
+
+(executable
+ (name lin_channels)
+ (libraries channels qcheck-lin.domain))
+
+(executable
+ (name stm_channels)
+ (libraries channels qcheck-stm.domain qcheck-stm.sequential))

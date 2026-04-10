@@ -1,3 +1,11 @@
 (test
  (name test_stm)
  (libraries stm unix))
+
+(executable
+ (name lin_stm)
+ (libraries stm qcheck-lin.domain))
+
+(executable
+ (name stm_stm)
+ (libraries stm qcheck-stm.domain qcheck-stm.sequential))
