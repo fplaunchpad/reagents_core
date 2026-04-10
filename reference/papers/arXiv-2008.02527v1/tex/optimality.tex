@@ -1,0 +1,76 @@
+\section{Reaching Optimality}\label{sec:optimality}
+
+%The attentive reader will notice that our algorithm, presented in Section~\ref{sec:algos}, uses $k+1$ \cas{} instructions to implement a $k$-word \mcas{}; the persistent version of our algorithm additionally uses $2$ persistence fences for the same task. 
+In this section, we describe how our algorithm can be modified to become optimal, both in terms of \cas{} instructions and in terms of persistence fences~\cite{cohen18}.
+Intuitively, the crucial change consists in removing the status field of \mcasdescriptor{} (and thus of the \cas{} to set the status), while ensuring the status of an operation is never ambiguous.
+
+We introduce two new notions, compared to our algorithm in Section~\ref{sec:algos}.
+First, we introduce \textit{failure descriptors}, which are structures with the following fields: a pointer $P$ to another descriptor $D$, an address $W$ and a value $V$.
+As explained below, a failure descriptor is created and used to mark the failure of the \mcas{} operation corresponding to $D$.
+We distinguish between a failed and a non-failed (regular) descriptor by stealing one of the least-significant bits in a pointer.
+(Alternatively, we can add an immutable \texttt{type} field in the descriptor structures initialized during the construction of a descriptor).
+Second, when applying an \mcas{} $M'$ after a previous \mcas{} $M$, we do not remove pointers to $M$, but rather change the old/new value (depending on whether $M$ succeeded or failed) in $M$'s descriptor to point to $M'$. 
+This effectively creates a \textit{chain} of descriptors for each memory word.
+ 
+The new algorithm works as follows.  
+Just like before, an \mcas{} $M$ attempts to lock (install pointers to an \mcasdescriptor{} in) the target words one-by-one, using one \cas{} instruction per locked word.
+$M$ is successful if it manages to lock all its words.
+If $M$ finds a value $V$ different from the expected value $E$ in one of the target words $W$, $M$ creates a failure descriptor (with a pointer $D$, address $W$ and value $V$), and installs (with \cas{}) a pointer to this failure descriptor into $W$. 
+This has the effect of failing $M$.
+Thus, a successful \mcas{} operation uses exactly $k$ CAS instructions, while a failed \mcas{} uses at most $k$ CAS instructions. 
+
+Like before, when a (read or another \mcas{}) operation $M'$ finds an \mcas{} $M$ in progress, $M'$ attempts to determine $M$'s status by reading though all its words (which are sorted by their target addresses, as before).
+Note that $M'$ might need to traverse chains of descriptors for that and help them recursively.
+If $M'$ finds all of $M$'s target words to be locked, then $M$ is successful, and $M'$ proceeds to use the corresponding new values.
+If $M'$ finds a pointer to a failure descriptor $F$ that belongs to $M$ (i.e., $F$ has a pointer to $M$), $M$ is failed and $M'$ proceeds to use the corresponding old value (which is the value $F.V$ for the word that has a pointer to $F$ or the expected value for a word that has a pointer to $M$).
+Otherwise (if $M$ is still active), $M'$ helps to complete $M$, either by locking the remaining words, or \cas{}-ing a pointer to a failed descriptor.
+
+As described above, this new algorithm does not use a status field, thus eliminating the need for a persistence fence to ensure the status is persistent. As such, only one fence is required, to ensure the persistence of all locked words (in the case of a successful \mcas{}), or the persistence of a pointer to the failure descriptor (in the case of a failed \mcas{}). As shown in previous work, this is the optimal number of persistence fences for lock-free objects~\cite{cohen18}.
+
+
+
+% \section{Reaching Optimality}\label{sec:optimality}
+
+% %The attentive reader will notice that our algorithm, presented in Section~\ref{sec:algos}, uses $k+1$ \cas{} instructions to implement a $k$-word \mcas{}; the persistent version of our algorithm additionally uses $2$ persistence fences for the same task. 
+% In this section, we describe how our algorithm can be modified to become optimal, both in terms of \cas{} instructions and in terms of persistence fences~\cite{cohen18}.
+% Intuitively, the crucial change consists in avoiding the atomic update of the status field of \mcasdescriptor{} (with \cas{}), but rather doing that with a simple store, while ensuring the status of an operation is never ambiguous.
+
+% We introduce a new notion, compared to our algorithm in Section~\ref{sec:algos}, namely, \textit{failure} descriptors.
+% Those are structures with the following fields: a pointer $P$ to another descriptor $D$, an address $W$ and a value $V$. 
+% As explained below, a failure descriptor is created and used to fail the \mcas{} operation corresponding to $D$.
+% We distinguish between a failed and a non-failed (regular) descriptor by stealing one of the least-significant bits in a pointer.
+% (Alternatively, we can add an immutable \texttt{type} field in the descriptor structures initialized during the construction of a descriptor).
+ 
+% The new algorithm works as follows.  
+% Just like before, an \mcas{} $M$ attempts to lock (install pointers to an \mcasdescriptor{} in) the target words one-by-one, using one \cas{} instruction per locked word.
+% $M$ is successful if it manages to lock all its words.
+% If $M$ finds a value $V$ different from the expected value $E$ in one of the target words $W$, $M$ creates a failure descriptor (with a pointer $D$, address $W$ and value $V$), and installs (with \cas{}) a pointer to this failure descriptor into $W$. 
+% This has the effect of failing $M$.
+% Thus, a successful \mcas{} operation would employ exactly $k$ CAS instructions, while a failed \mcas{} would employ at most $k$ CAS instructions. 
+
+% Like before, when a (read or another \mcas{}) operation $M'$ finds a pointer to an active descriptor of \mcas{} $M$,
+% it helps $M$ to complete by reading though all $M$'s words (which are sorted by their target addresses, as before), and either 
+% installing $M$'s descriptor or $M$'s failure descriptor.
+% The traversal immediately stops if $M'$ succeeds to install a failure descriptor, 
+% or finds it in one of the $M$'s words.
+
+% After the traversal is done by a thread $T$ (which may be the thread that invoked $M$ or another thread helping $M$), 
+% $T$ checks the status of $M$ and sets the status (corresponding to the result of $T$'s traversal) only if the status is not set.
+% This check, albeit non-atomic, is crucial for correctness, which follows from the following argument. 
+% If a thread manages to lock a word for $M$, then it is either the first to do so, 
+% or the lock has been already set up and cleared in the past (by another operation), 
+% but then the clearance would happen only after the status is set.
+% Note that in the latter case, such a tardy lock is benign, as we can always recover the actual value that the lock replaced from the (failed or regular) descriptor for $M$.
+
+% To complete the description of the modified algorithm, we note that the call for \texttt{retireForCleanup} (see Line~\ref{retire-for-cleanup} in Listing~\ref{list:algo}) 
+% is done only by the thread that invoked the corresponding \mcas{} operation.
+% This is to prevent multiple threads from reclaiming the same descriptor.
+% Finally, we eliminate the persistence fence after updating the status.
+% To ensure durable linearizability, however, we need to make sure the status word for $M$ is persisted before unlocking 
+% any of $M$'s words.
+% We achieve that by flushing $M$'s status and issuing a persistence fence before replacing a pointer to $M$'s descriptor with a pointer to $M'$ descriptor
+% (i.e., before executing Line~\ref{mcas-acquire} in Listing~\ref{list:algo}).
+% As such, an \mcas{} operation that does not update words currently locked by another \mcas{} operation requires just one persistence fence (see Line~\ref{fence-acquire} in Listing~\ref{list:algo}).
+% This fence ensures the persistence of all locked words (in the case of a successful \mcas{}), or the persistence of the failure descriptor (in the case of a failed \mcas{}). 
+%  As shown in previous work, this is the optimal number of persistence fences for lock-free objects~\cite{cohen18}.
+

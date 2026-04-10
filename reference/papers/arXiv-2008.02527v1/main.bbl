@@ -1,0 +1,367 @@
+\begin{thebibliography}{10}
+
+\bibitem{AfekDM11}
+Yehuda Afek, Dave Dice, and Adam Morrison.
+\newblock Cache index-aware memory allocation.
+\newblock In {\em Proceedings of the International Symposium on Memory
+  Management (ISMM)}, page 55–64. Association for Computing Machinery, 2011.
+
+\bibitem{aguilera2003strict}
+Marcos~K Aguilera and Svend Fr{\o}lund.
+\newblock Strict linearizability and the power of aborting.
+\newblock Technical Report HPL-2003-241, HP Labs, 2003.
+
+\bibitem{alistarh17}
+Dan Alistarh, William~M. Leiserson, Alexander Matveev, and Nir Shavit.
+\newblock {Forkscan: Conservative Memory Reclamation for Modern Operating
+  Systems}.
+\newblock In {\em Proceedings of the Twelfth European Conference on Computer
+  Systems, EuroSys 2017}, pages 483--498, 2017.
+
+\bibitem{anderson95}
+James~H. Anderson and Mark Moir.
+\newblock {Universal Constructions for Multi-object Operations}.
+\newblock In {\em {14th Annual ACM Symposium on Principles of Distributed
+  Computing}}, pages 184--193, 1995.
+
+\bibitem{anderson97}
+James~H. Anderson, Srikanth Ramamurthy, and Rohit Jain.
+\newblock {Implementing Wait-free Objects on Priority-based Systems}.
+\newblock In {\em {16th Annual ACM Symposium on Principles of Distributed
+  Computing}}, pages 229--238, 1997.
+
+\bibitem{arulraj18}
+Joy Arulraj, Justin Levandoski, Umar~Farooq Minhas, and Per-Ake Larson.
+\newblock {BzTree: A High-Performance Latch-free Range Index for Non-Volatile
+  Memory}.
+\newblock In {\em {44th International Conference on Very Large Data Bases}},
+  2018.
+
+\bibitem{ascylibcode}
+{ASCYLIB}, a concurrent-search data-structure library with over 40
+  implementations of linked lists, hash tables, skip lists, binary search
+  trees, queues, and stacks.
+\newblock \url{https://github.com/LPD-EPFL/ASCYLIB}, 2018.
+
+\bibitem{attiya11}
+Hagit Attiya and Eshcar Hillel.
+\newblock Highly concurrent multi-word synchronization.
+\newblock {\em Theor. Comput. Sci.}, 412(12-14):1243--1262, 2011.
+
+\bibitem{BerryhillGT15}
+Ryan Berryhill, Wojciech~M. Golab, and Mahesh Tripunitara.
+\newblock Robust shared objects for non-volatile main memory.
+\newblock In {\em 19th International Conference on Principles of Distributed
+  Systems, {OPODIS} 2015}, pages 20:1--20:17, 2015.
+
+\bibitem{braginsky12}
+Anastasia Braginsky and Erez Petrank.
+\newblock {A Lock-free B+Tree}.
+\newblock In {\em Proceedings of the Twenty-fourth Annual ACM Symposium on
+  Parallelism in Algorithms and Architectures}, pages 58--67, 2012.
+
+\bibitem{brown13}
+Trevor Brown, Faith Ellen, and Eric Ruppert.
+\newblock {Pragmatic Primitives for Non-blocking Data Structures}.
+\newblock In {\em {ACM} Symposium on Principles of Distributed Computing,
+  {PODC} '13}, pages 13--22, 2013.
+
+\bibitem{Brown15}
+Trevor~Alexander Brown.
+\newblock {Reclaiming Memory for Lock-Free Data Structures: There Has to Be a
+  Better Way}.
+\newblock In {\em Proceedings of the 2015 ACM Symposium on Principles of
+  Distributed Computing}, pages 261--270, 2015.
+
+\bibitem{bztreecode}
+Bztree: a high-performance latch-free range index for non-volatile memory.
+\newblock \url{https://github.com/wangtzh/bztree}, 2019.
+
+\bibitem{CepedaCLLWG19}
+Diego Cepeda, Sakib Chowdhury, Nan Li, Raphael Lopez, Xinzhe Wang, and Wojciech
+  Golab.
+\newblock Toward linearizability testing for multi-word persistent
+  synchronization primitives.
+\newblock In {\em 23rd International Conference on Principles of Distributed
+  Systems, {OPODIS} 2019}, volume 153, pages 19:1--19:17, 2019.
+
+\bibitem{cohen18}
+Nachshon Cohen, Rachid Guerraoui, and Igor Zablotchi.
+\newblock {The Inherent Cost of Remembering Consistently}.
+\newblock In {\em Proceedings of the 30th {ACM} Symposium on Parallelism in
+  Algorithms and Architectures, {SPAA} 2018}, 2018.
+
+\bibitem{ConditNFILBC09}
+Jeremy Condit, Edmund~B. Nightingale, Christopher Frost, Engin Ipek,
+  Benjamin~C. Lee, Doug Burger, and Derrick Coetzee.
+\newblock Better {I/O} through byte-addressable, persistent memory.
+\newblock In {\em Proceedings of the 22nd {ACM} Symposium on Operating Systems
+  Principles 2009, {SOSP} 2009}, pages 133--146, 2009.
+
+\bibitem{david18}
+Tudor David, Aleksandar Dragojevic, Rachid Guerraoui, and Igor Zablotchi.
+\newblock {Log-Free Concurrent Data Structures}.
+\newblock In {\em 2018 {USENIX} Annual Technical Conference, {USENIX} {ATC}
+  2018}, 2018.
+
+\bibitem{DavidGT13}
+Tudor David, Rachid Guerraoui, and Vasileios Trigonakis.
+\newblock Everything you always wanted to know about synchronization but were
+  afraid to ask.
+\newblock In {\em {ACM} {SIGOPS} 24th Symposium on Operating Systems
+  Principles, {SOSP} '13, Farmington, PA, USA, November 3-6, 2013}, pages
+  33--48, 2013.
+
+\bibitem{detlefs00}
+David Detlefs, Christine~H. Flood, Alex Garthwaite, Paul Martin, Nir Shavit,
+  and Guy~L. Steele, Jr.
+\newblock {Even Better DCAS-Based Concurrent Deques}.
+\newblock In {\em {14th International Conference on Distributed Computing}},
+  pages 59--73, 2000.
+
+\bibitem{DHK16}
+Dave Dice, Maurice Herlihy, and Alex Kogan.
+\newblock Fast non-intrusive memory reclamation for highly-concurrent data
+  structures.
+\newblock In {\em Proceedings of the 2016 ACM SIGPLAN International Symposium
+  on Memory Management}, pages 36--45, 2016.
+
+\bibitem{doherty04}
+Simon Doherty, David~L. Detlefs, Lindsay Groves, Christine~H. Flood, Victor
+  Luchangco, Paul~A. Martin, Mark Moir, Nir Shavit, and Guy~L. Steele, Jr.
+\newblock {DCAS is Not a Silver Bullet for Nonblocking Algorithm Design}.
+\newblock In {\em Proceedings of the Sixteenth Annual ACM Symposium on
+  Parallelism in Algorithms and Architectures}, pages 216--224, 2004.
+
+\bibitem{feldman15}
+Steven~D. Feldman, Pierre LaBorde, and Damian Dechev.
+\newblock {A Wait-Free Multi-Word Compare-and-Swap Operation}.
+\newblock {\em International Journal of Parallel Programming}, 43(4):572--596,
+  2015.
+
+\bibitem{Fraser04}
+Keir Fraser.
+\newblock {\em Practical lock-freedom}.
+\newblock PhD thesis, University of Cambridge, {UK}, 2004.
+
+\bibitem{FriedmanHMP18}
+Michal Friedman, Maurice Herlihy, Virendra~J. Marathe, and Erez Petrank.
+\newblock A persistent lock-free queue for non-volatile memory.
+\newblock In {\em Proceedings of the 23rd {ACM} {SIGPLAN} Symposium on
+  Principles and Practice of Parallel Programming, {PPoPP} 2018}, pages 28--40,
+  2018.
+
+\bibitem{greenwald99}
+Michael Greenwald.
+\newblock Non-blocking synchronization and system design. {\it ph.d. thesis,
+  stanford university}, 1999.
+
+\bibitem{greenwald02}
+Michael Greenwald.
+\newblock Two-handed emulation: how to build non-blocking implementation of
+  complex data-structures using {DCAS}.
+\newblock In {\em 21st Annual {ACM} Symposium on Principles of Distributed
+  Computing}, pages 260--269, 2002.
+
+\bibitem{longversion}
+Rachid Guerraoui, Alex Kogan, Virendra~J. Marathe, and Igor Zablotchi.
+\newblock Efficient multi-word compare and swap.
+\newblock {\em ArXiv preprint arXiv:???}, 2020.
+\newblock URL: \url{http://arxiv.org/???}, \href {http://arxiv.org/abs/???}
+  {\path{arXiv:???}}
+
+\bibitem{GuerraouiL04}
+Rachid Guerraoui and Ron~R. Levy.
+\newblock {Robust Emulations of Shared Memory in a Crash-Recovery Model}.
+\newblock In {\em 24th International Conference on Distributed Computing
+  Systems {(ICDCS} 2004)}, pages 400--407, 2004.
+
+\bibitem{ha03}
+Phuong~Hoai Ha and Philippas Tsigas.
+\newblock {Reactive Multi-Word Synchronization for Multiprocessors}.
+\newblock In {\em 12th International Conference on Parallel Architectures and
+  Compilation Techniques {(PACT} 2003)}, pages 184--193, 2003.
+
+\bibitem{ha04}
+Phuong~Hoai Ha and Philippas Tsigas.
+\newblock {Reactive Multi-word Synchronization for Multiprocessors}.
+\newblock {\em J. Instruction-Level Parallelism}, 6, 2004.
+
+\bibitem{harris10}
+Tim Harris, James~R. Larus, and Ravi Rajwar.
+\newblock {\em {Transactional Memory: 2nd Edition}}.
+\newblock {Morgan \& Claypool}, 2010.
+
+\bibitem{harris03}
+Timothy~L. Harris and Keir Fraser.
+\newblock {Language support for lightweight transactions}.
+\newblock In {\em Proceedings of the 2003 {ACM} {SIGPLAN} Conference on
+  Object-Oriented Programming Systems, Languages and Applications}, pages
+  388--402, 2003.
+
+\bibitem{harris02}
+Timothy~L. Harris, Keir Fraser, and Ian~A. Pratt.
+\newblock {A Practical Multi-word Compare-and-Swap Operation}.
+\newblock In {\em 16th International Conference on Distributed Computing},
+  pages 265--279, 2002.
+
+\bibitem{herlihy93}
+Maurice Herlihy.
+\newblock A methodology for implementing highly concurrent data objects.
+\newblock {\em {ACM Transactions on Programming Languages and Systems}},
+  15(5):745--770, November 1993.
+
+\bibitem{herlihy03}
+Maurice Herlihy, Victor Luchangco, Mark Moir, and William~N. Scherer, III.
+\newblock {Software Transactional Memory for Dynamic-sized Data Structures}.
+\newblock In {\em Proceedings of the Twenty-second Annual Symposium on
+  Principles of Distributed Computing}, pages 92--101, 2003.
+
+\bibitem{herlihy93a}
+Maurice Herlihy and J.~Eliot~B. Moss.
+\newblock {Transactional Memory: Architectural Support for Lock-free Data
+  Structures}.
+\newblock In {\em {20th Annual International Symposium on Computer
+  Architecture}}, pages 289--300, 1993.
+
+\bibitem{HW+91}
+Maurice Herlihy and Jeannette~M Wing.
+\newblock {Linearizability: A correctness condition for concurrent objects}.
+\newblock {\em ACM Transactions on Programming Languages and Systems},
+  12(3):463--492, 1990.
+
+\bibitem{intel}
+Intel.
+\newblock {Intel\textsuperscript{\textregistered} 64 and IA-32 Architectures
+  Software Developer's Manual Combined}.
+\newblock
+  \url{https://software.intel.com/sites/default/files/managed/39/c5/325462-sdm-vol-1-2abcd-3abcd.pdf},
+  2018.
+
+\bibitem{israeli94}
+Amos Israeli and Lihu Rappoport.
+\newblock {Disjoint-Access-Parallel Implementations of Strong Shared Memory
+  Primitives}.
+\newblock In {\em Proceedings of the Thirteenth Annual {ACM} Symposium on
+  Principles of Distributed Computing}, pages 151--160, 1994.
+
+\bibitem{izraelevitz16}
+Joseph Izraelevitz, Hammurabi Mendes, and Michael~L. Scott.
+\newblock Linearizability of persistent memory objects under a
+  full-system-crash failure model.
+\newblock In {\em Distributed Computing - 30th International Symposium, {DISC}
+  2016}, pages 313--327, 2016.
+
+\bibitem{levandoski13}
+Justin~J. Levandoski, David~B. Lomet, and Sudipta Sengupta.
+\newblock {The Bw-Tree: A B-tree for New Hardware Platforms}.
+\newblock In {\em Proceedings of the 2013 IEEE International Conference on Data
+  Engineering (ICDE 2013)}, pages 302--313, 2013.
+
+\bibitem{luchangco03}
+Victor Luchangco, Mark Moir, and Nir Shavit.
+\newblock {Nonblocking k-compare-single-swap}.
+\newblock In {\em {SPAA} 2003: Proceedings of the Fifteenth Annual {ACM}
+  Symposium on Parallelism in Algorithms and Architectures}, pages 314--323,
+  2003.
+
+\bibitem{MaratheM08}
+Virendra~J. Marathe and Mark Moir.
+\newblock Toward high performance nonblocking software transactional memory.
+\newblock In {\em Proceedings of the 13th {ACM} {SIGPLAN} Symposium on
+  Principles and Practice of Parallel Programming, {PPOPP} 2008, Salt Lake
+  City, UT, USA, February 20-23, 2008}, pages 227--236. {ACM}, 2008.
+
+\bibitem{McKenney17}
+Paul~E. McKenney.
+\newblock Is parallel programming hard, and, if so, what can you do about it?,
+  2017.
+
+\bibitem{MS98}
+Paul~E. McKenney and John~D. Slingwine.
+\newblock {Read-Copy Update: Using Execution History to Solve Concurrency
+  Problems}.
+\newblock In {\em {Parallel and Distributed Computing and Systems}}, 1998.
+
+\bibitem{Michael04}
+Maged~M. Michael.
+\newblock Hazard pointers: Safe memory reclamation for lock-free objects.
+\newblock {\em IEEE Trans. Parallel Distrib. Syst.}, 15(6):491--504, 2004.
+
+\bibitem{moir97}
+Mark Moir.
+\newblock {Transparent Support for Wait-Free Transactions}.
+\newblock In {\em {11th International Workshop on Distributed Algorithms}},
+  pages 305--319, 1997.
+
+\bibitem{natarajan14}
+Aravind Natarajan and Neeraj Mittal.
+\newblock {Fast Concurrent Lock-free Binary Search Trees}.
+\newblock In {\em Proceedings of the 19th ACM SIGPLAN Symposium on Principles
+  and Practice of Parallel Programming}, pages 317--328, 2014.
+
+\bibitem{openmp}
+The {OpenMP API} specification for parallel programming.
+\newblock \url{https://www.openmp.org/}, 2019.
+
+\bibitem{pavlovic18}
+Matej Pavlovic, Alex Kogan, Virendra~J. Marathe, and Tim Harris.
+\newblock {Persistent Multi-Word Compare-and-Swap}.
+\newblock In {\em {ACM Synposium on Principles of Distributed Computing}},
+  2018.
+
+\bibitem{PelleyCW15}
+Steven Pelley, Peter~M. Chen, and Thomas~F. Wenisch.
+\newblock Memory persistency: Semantics for byte-addressable nonvolatile memory
+  technologies.
+\newblock {\em {IEEE} Micro}, 35(3):125--131, 2015.
+
+\bibitem{pibencode}
+Benchmarking framework for index structures on persistent memory.
+\newblock \url{https://github.com/wangtzh/pibench}, 2019.
+
+\bibitem{pmwcascode}
+Persistent multi-word compare-and-swap ({PMwCAS}) for {NVRAM}.
+\newblock \url{https://github.com/microsoft/pmwcas}, 2019.
+
+\bibitem{poter18}
+Manuel P{\"{o}}ter and Jesper~Larsson Tr{\"{a}}ff.
+\newblock \emph{Stamp-it}, amortized constant-time memory reclamation in
+  comparison to five other schemes.
+\newblock In {\em Proceedings of the 23rd {ACM} {SIGPLAN} Symposium on
+  Principles and Practice of Parallel Programming, PPoPP 2018}, pages 413--414,
+  2018.
+
+\bibitem{shavit95}
+Nir Shavit and Dan Touitou.
+\newblock {Software Transactional Memory}.
+\newblock In {\em {14th Annual ACM Symposium on Principles of Distributed
+  Computing}}, pages 204--213, 1995.
+
+\bibitem{sundell11}
+H{\aa}kan Sundell.
+\newblock {Wait-Free Multi-Word Compare-and-Swap Using Greedy Helping and
+  Grabbing}.
+\newblock {\em International Journal of Parallel Programming}, 39(6):694--716,
+  2011.
+
+\bibitem{timnat15}
+Shahar Timnat, Maurice Herlihy, and Erez Petrank.
+\newblock {A Practical Transactional Memory Interface}.
+\newblock In {\em Euro-Par 2015: Parallel Processing - 21st International
+  Conference on Parallel and Distributed Computing}, pages 387--401, 2015.
+
+\bibitem{wang18}
+Tianzheng Wang, Justin Levandoski, and Per-Ake Larson.
+\newblock {Easy Lock-Free Indexing in Non-Volatile Memory}.
+\newblock In {\em {34th IEEE International Conference on Data Engineering}},
+  2018.
+
+\bibitem{wen18}
+Haosen Wen, Joseph Izraelevitz, Wentao Cai, H.~Alan Beadle, and Michael~L.
+  Scott.
+\newblock Interval-based memory reclamation.
+\newblock In {\em Proceedings of the 23rd {ACM} {SIGPLAN} Symposium on
+  Principles and Practice of Parallel Programming}, pages 1--13, 2018.
+
+\end{thebibliography}

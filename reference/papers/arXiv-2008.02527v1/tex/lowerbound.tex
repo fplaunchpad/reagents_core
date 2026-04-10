@@ -1,0 +1,69 @@
+\section{Impossibility}\label{sec:lowerbound}
+
+In this section we show that any lock-free disjoint-access-parallel (DAP) implementation of MCAS requires at least one \cas{} per modified word. Consider a call to $k$-\cas$(addr_1, \dots, addr_k$, [old and new values]). We call ${addr_1, \dots, addr_k}$ the \textit{set of targets} of the call. We also define the \textit{range} of the call in an execution $E$ to be the set of locations on which \cas{} (single-word \cas) is performed, successfully or not, during the call in $E$. 
+Intuitively, we say that an \mcas{} implementation is \textit{DAP} if non-conflicting calls to $k$-\cas{} do not access the same memory locations; for the formal definition, see~\cite{israeli94}.
+
+\begin{definition}[Star Configuration]
+We say that a set $\lbrace c_0, \dots ,c_\ell \rbrace$ of calls to $k$-\cas{} are in a \emph{star configuration} if (1) the sets of targets of $c_0$ and $c_i$ are non-disjoint for all $i \in \lbrace 1,\dots,\ell\rbrace$, and (2) the sets of targets of $c_i$ and $c_j$ are disjoint for all $i\ne j\in\lbrace1,\dots,\ell\rbrace$.
+\end{definition}
+
+An example of a star configuration for $\ell = k$ is the following set of calls $\mathcal{C} = \lbrace c_0, \dots ,c_k\rbrace$, where we omit old and new values for ease of notation and we assume that addresses $a_i^{(j)}$ are all distinct:
+\begin{itemize}
+    \item $c_0$: $k$-\cas{}$(a_1^{(0)}, \dots, a_k^{(0)})$
+    \item $c_1$: $k$-\cas{}$(a_1^{(0)}, a_2^{(1)}, \dots, a_k^{(1)})$. Call $c_1$'s set of targets intersects that of $c_0$ in $a_1^{(0)}$.
+    \item $c_i$, $1\leq i \leq k$: $k$-\cas{}$(a_1^{(i)}, \dots, a_i^{(0)}, \dots, a_k^{(i)})$. Call $c_i$'s set of targets intersects that of $c_0$ in $a_i^{(0)}$ and is disjoint from the set of targets of $c_j$ for all $j\ne i, j\ne0$.
+\end{itemize}
+
+In this section, we assume without loss of generality that all calls in $\mathcal{C}$ have the correct old values for their target addresses and that each new value is distinct from its respective old value. Under these assumptions, in every execution it must be that either $c_0$ succeeds and all $c_1,\dots,c_k$ fail, or that $c_0$
+ fails and all $c_1,\dots,c_k$ succeed.
+
+
+We say that a state $S$ of an implementation $\mathcal{A}$ is $c_0$-valent with respect to (\textit{wrt}) some subset $C \subseteq \mathcal{C}$ if, for any call $c_i\in C$, in any execution starting from $S$ in which only $c_0$ and $c_i$ take steps, $c_0$ succeeds. Similarly, we say that a state $S$ is $C$-valent \textit{wrt} $c_0$ if, for any call $c_i\in C$, in any execution starting from $S$ in which only $c_0$ and $c_i$ take steps, $c_0$ fails. We say that a state is univalent \textit{wrt} $c_0$ and $C$ if it is $c_0$-valent or $C$-valent; otherwise it is bivalent \textit{wrt} $c_0$ and $C$. A state is critical \textit{wrt} $c_0$ and $C$ when (1) it is bivalent \textit{wrt} $c_0$ and $C$ and (2) if any process in $\lbrace c_0 \rbrace \cup C$ takes a step, the state becomes univalent \textit{wrt} $c_0$ and $C$.
+
+Note that the initial state of $\mathcal{A}$ must be bivalent \textit{wrt} $c_0$ and any non-empty subset of $\mathcal{S}$.
+
+\begin{lemma}\label{lemma-disjoint}
+Consider a lock-free implementation $\mathcal{A}$ of $k$-\cas{} and let $\mathcal{C} = \lbrace c_0, \dots ,c_\ell \rbrace$ be a star configuration of calls to $k$-\cas{}. Then there exists an execution $E$ of $\mathcal{A}$ such that, for all $i \geq 1$, the ranges of $c_0$ and $c_i$ in $E$ are non-disjoint.
+\end{lemma}
+
+\begin{proof}
+We follow a bivalency proof structure. We construct an execution in which process $p_i$ performs call $c_i$, $i\geq0$. For ease of notation, we say that ``call $c_i$ takes a step'' to mean ``process $p_i$ takes a step in its execution of $c_i$''.
+
+The execution proceeds in stages. In the first stage, as long as some call in $\mathcal{C}$ can take a step without making the state univalent \textit{wrt} $c_0$ and any non-empty subset of $\mathcal{C}$, let that call take a step. If the execution runs forever, the implementation is not lock-free. Otherwise, the execution enters a state $S$ where no such step is possible, which must be a critical state \textit{wrt} $c_0$ and some subset $C_1 \subseteq \mathcal{C}\setminus\lbrace c_0 \rbrace$. We choose $C_1$ to be maximal, i.e., state $S$ is not critical \textit{wrt} $c_0$ and any subset of $\mathcal{C}\setminus C_1$ (otherwise, add that subset to $C_1$).
+
+We prove in Lemma~\ref{lemma-critical} below that $c_0$ and all calls in $C_1$ are about to perform \cas{} on some common location $l_1$. We let $c_0$ perform that \cas{} step, bringing the protocol to state $S'$. By our choice of $C_1$ as maximal, $S'$ must be bivalent \textit{wrt} $c_0$ and any subset of $\mathcal{C}\setminus C_1$. The execution now enters the second stage, in which we let calls in $\mathcal{C}\setminus C_1$ take steps until they reach a critical state \textit{wrt} $c_0$ and some subset $C_2 \subseteq \mathcal{C}\setminus C_1$. By induction, we can show that eventually $c_0$ will have reached critical points \textit{wrt} all calls in $\mathcal{C}$. At the end of the execution, we resume each process in $\mathcal{C}\setminus c_0$ for one step; they were each about to perform a \cas{} step on some location on which $c_0$ has already performed a \cas{} step. Thus, in this execution, all calls in $\mathcal{C}\setminus c_0$ have performed a \cas{} on a common location with $c_0$.
+\end{proof}
+% we let $c_0$ execute until its next step would make the state $c_0$-valent with respect to one or more calls $C_1 \subseteq \mathcal{C}\setminus\lbrace c_0 \rbrace$. As long as some call in $C_1$ can take a step without making the state $C_1$-valent, let that call take a step. If the execution runs forever, the implementation is not lock-free. Otherwise, the execution eventually enters a state where no such step is possible, which must be a critical state. 
+% Since Case 4 is the only case that does not lead to a contradiction, it must be that $c_0$ and the processes in $C_1$ are about to perform a \cas{} on the same location $l_1$. Let $c_0$ perform the \cas{} first, followed by each call in $C_1$. At this point, $c_0$ and all the calls in $C_1$ have performed a \cas{} on location $l_1$.
+
+% This starts the second stage of the execution: we let $c_0$ and some subset $C_2 \subseteq \mathcal{C}\setminus C_1 \setminus \lbrace c_0 \rbrace$  performs steps until they reach a critical state. From here, using the same argument as above, $c_0$ and the calls in $C_2$ must be about to perform \cas{} on the same location $l_2$. By induction, we continue in this way until all processes in $\mathcal{C}\setminus\lbrace c_0 \rbrace$ have performed a \cas{} on a common location with $c_0$. This proves the lemma.
+
+\begin{lemma}\label{lemma-critical}
+Consider a lock-free implementation $\mathcal{A}$ of $k$-\cas{} and let $\mathcal{C} = \lbrace c_0, \dots ,c_k \rbrace$ be a star configuration of calls to $k$-\cas{}. If $S$ is a critical state of $\mathcal{A}$ \textit{wrt} $c_0$ and some subset $C\subseteq\mathcal{C}$, then in $S$, $c_0$ and all calls in $C$ are about to perform a \cas{} step on a common location $l$.
+\end{lemma}
+\begin{proof}
+From $S$, we consider the next steps of $c_0$ and any $c_i \in C$:
+
+\begin{description}
+\item[Case 1] One of the calls is about to read; assume \textit{wlog} it is $c_0$. Consider two possible scenarios. First scenario: $c_i$ moves first and runs solo until it returns ($c_i$ must succeed because $c_i$ took the first step). Second scenario: $c_0$ moves first and reads, then $c_i$ runs solo until it returns ($c_i$ must fail because $c_0$ took the first step). But the two scenarios are indistinguishable to $c_i$, thus $c_i$ must either succeed in both or fail in both, a contradiction.
+\item[Case 2] Both calls are about to write. In this case, they must be about to write to the same register $r$, otherwise their writes commute. First scenario: $c_0$ writes $r$, then $c_i$ writes $r$, then $c_i$ runs solo until it returns ($c_i$ must fail since $c_0$ took the first step). Second scenario: $c_i$ writes $r$ and then runs solo until it returns ($c_i$ must succeed since $c_i$ took the first step). But the two scenarios are indistinguishable to $c_i$, since its write to $r$ obliterated any potential write by $c_0$ to $r$, so $c_i$ must either succeed in both scenarios or fail in both; a contradiction.
+\item[Case 3] $c_0$ is about to \cas{} and $c_i$ is about to write (or vice-versa). In this case, their operations must be to the same memory location $r$ (otherwise they commute). First scenario: $c_0$ \cas{}es $r$, then $c_i$ writes to $r$ and then runs solo until $c_i$ returns ($c_i$ must fail since $c_0$ took the first step). Second scenario: $c_i$ writes to $r$ and then runs solo until it returns ($c_i$ must succeed since $c_i$ took the first step). But the two scenarios are indistinguishable to $c_i$, since its write to $r$ obliterated any preceding \cas{} by $c_0$ to $r$; thus $c_i$ must either succeed in both scenarios or fail in both; a contradiction.
+\item[Case 4] Both calls are about to \cas{}. In this case, they must be about to \cas{} the same location, otherwise their \cas{}es commute. \qedhere
+\end{description}
+\end{proof}
+
+\begin{theorem}
+Consider a lock-free disjoint-access-parallel implementation $\mathcal{A}$ of $k$-\cas{} in a system with $n>k$ processes. Then there exists some execution $E$ of $\mathcal{A}$ such that in $E$ some call to $k$-\cas{} performs \cas{} on at least $k$ locations.
+\end{theorem}
+
+\begin{proof}
+We prove the theorem by contradiction. We first assume that calls to $k$-\cas{} perform \cas{} on \textit{exactly} $k-1$ locations and derive a contradiction; we later show how assuming that $k$-\cas{} performs \cas{} on \textit{at most} $k-1$ locations also leads to a contradiction.
+
+We construct an execution $E$ in which two concurrent but non-contending $k$-\cas{} calls (i.e., two $k$-\cas{} calls with disjoint sets of targets) perform \cas{} on the same location, thus contradicting the disjoint-access-parallelism (DAP) property and proving the theorem.
+
+Let $c_0,\dots,c_k$ be $k+1$ calls to $k$-\cas{} in a star configuration. By Lemma~\ref{lemma-disjoint}, there exists an execution $E$ of $\mathcal{A}$ such that, for all $i \geq 1$, the ranges of $c_0$ and $c_i$ in $E$ are non-disjoint.
+
+Let $l_1, \dots, l_{k-1}$ be the range of $c_0$. By Lemma~\ref{lemma-disjoint}, in $E$ the range of $c_1$ must intersect that of $c_0$ in at least one location; assume \textit{wlog} it is $l_1$. Furthermore, the range of $c_2$ must also intersect that of $c_0$ in at least one location; moreover, due to the DAP property, the intersection must contain some location other than $l_1$, since $c_1$ and $c_2$ have disjoint sets of targets. By induction, we can show that the range of each call $c_i, i\in\lbrace 1,2,\dots,k-1\rbrace$ intersects the range of $c_0$ in $l_i$. However, the range of $c_k$ must also intersect the range of $c_0$ in some location other than $l_1, \dots, l_{k-1}$, due to the DAP property. We have reached a contradiction.
+
+If we now assume that calls to $k$-\cas{} perform \cas{} on $k-1$ \textit{or fewer} locations, then we also reach a similar contradiction as above. In fact, if some call $c_i$ performs \cas{} on strictly fewer than $k-1$ locations, this may cause the contradiction to occur before call $c_k$, as $c_i$ now has fewer locations to choose from in order intersect with the range of $c_0$ in some location that is not in the ranges of $c_1,\dots, c_{i-1}$.
+\end{proof}

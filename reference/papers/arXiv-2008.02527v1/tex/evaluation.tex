@@ -1,0 +1,65 @@
+\section{Evaluation}\label{sec:eval}
+
+
+\subsection{Experimental Setup}
+
+We evaluate our algorithm on a 2-socket Intel Xeon machine with two E5-2630 v4 processors operating at 3.1 GHz. Each processor has 10 cores, each core has 2 hardware threads (40 hardware threads total). Each experimental run lasts 5 seconds; shown values are the average of 5 runs. We base our evaluation on the framework available from the authors of PMwCAS~\cite{pmwcascode,wang18}.
+
+The baseline of our evaluation is the volatile version of PMwCAS~\cite{pmwcascode,wang18}, a state-of-the-art implementation of the Harris et al.~\cite{harris02} algorithm. Like the Harris et al. algorithm, volatile PMwCAS requires $3k+1$ \cas{}es per $k$-\cas{}. We use PMwCAS as our baseline since (1) it has recent, openly available and well-maintained code and (2) it is to our knowledge the only other \mcas{} algorithm in which readers do not write to shared memory in the common uncontended case.
+
+PMwCAS implements an optimization of the Harris et al. algorithm: it marks pointers with a special \textit{RDCSS} flag instead of allocating a distinct RDCSS descriptor. However, we found that this optimization made the PMwCAS algorithm incorrect, due to an ABA vulnerability. In our evaluation, we fixed the PMwCAS implementation to allocate and manually manage RDCSS descriptors.
+
+Our evaluation uses three benchmarks: an \textit{array benchmark} in which threads perform \mcas{}-based read-modify-write operations at random locations in an array, a \textit{doubly-linked list benchmark}, in which threads perform \mcas{}-based operations on a list implementing an ordered set, and a \textit{B+tree benchmark} in which threads perform \mcas{}-based operations on a B+-tree. The first two benchmarks are based on the implementation available in~\cite{pmwcascode}, and the third is based on PiBench~\cite{pibencode} and BzTree~\cite{arulraj18,bztreecode}. We note, however, that we modified the
+benchmark in~\cite{pmwcascode} so all threads operate on the same key range (rather than having each thread using a unique set of keys), so we could induce contention by controlling the size of the key range.
+
+In each experiment, we vary the number of threads from 1 to 39 (we reserve one hardware thread for the main thread). Threads are assigned according to the default settings in the evaluation frameworks used~\cite{bztreecode,pibencode,pmwcascode}. In the array and list benchmarks, threads are assigned in the following way: we first populate the first hardware thread of each core on the first socket, then on the second socket, then we populate the second hardware thread on each core on the first socket, and finally the second hardware thread on each core on the second socket. The B+-tree benchmark uses OpenMP~\cite{openmp}, which dictates thread assignment; it also employs a scalable memory allocator~\cite{AfekDM11}.
+% This is the default setting for thread affinity in the evaluation framework~\cite{pmwcascode}.
+
+\subsection{Array Benchmark}
+
+The benchmark consists of each thread performing the following in a tight loop: reading $k$ locations at random from the array ($k=4$ in our experiments), computing a new value for each location, and attempting to install the new values using an \mcas{}.
+
+In this benchmark we measure two quantities. The first is throughput: the number of read-modify-write operations completed successfully per time unit. The second metric is the \textit{helping ratio}. We measure the helping ratio by dividing the number of \textit{ongoing} \mcas{} operations encountered (and helped) during read or \mcas{} operations by the total number of \mcas{} operations. A higher helping ratio thus means more operations are slowed down due to the need to help other, incomplete \mcas{} operations.
+
+\input{tex/evaluation-figures.tex}
+
+We run the benchmark with three array sizes (10, 100, and 1000) in order to capture different contention levels. The results of this benchmark are shown in Figure~\ref{fig:array} (our algorithm is denoted \textit{AOPT} in all figures in this section). 
+
+The top row of Figure~\ref{fig:array} shows that our algorithm outperforms PMwCAS at every contention level and at every thread count, including in single-threaded mode. This can be explained by two related factors. First, our algorithm has a  lower \cas{} complexity ($k+1$ \cas{}es per $k$-\cas{} for our algorithm compared to $3k+1$ for PMwCAS). Second, as a consequence of its lower complexity, in our algorithm there is a shorter ``window'' for each \mcas{} operation to interfere with other operations by forcing them to help.
+
+
+To illustrate the second factor above, we examine the helping ratios of the two algorithms (bottom row of Figure~\ref{fig:array}). We observe that the helping ratio of our algorithm is considerably lower than that of PMwCAS. This means that, on average, each operation helps (and is slowed down by) fewer \mcas{} operations in our algorithm than in PMwCAS. 
+
+In order to quantify the impact of descriptor cleanup on performance in our algorithm, we also measure the \textit{detaching ratio}: the number of \cas{}es performed in order to detach (in the sense of Section~\ref{sec:mem-mgmt})  finalized \mcas{} descriptors, divided by the total number of completed \mcas{} operations. We find the detaching ratio to be less than $0.001$ for every thread count and array size. This is because finalized \mcas{} descriptors are constantly being replaced by ongoing \mcas{} operations, and thus recycling these detached descriptors requires no \cas{}es. We conclude that the vast majority of our \mcas{} operations do not incur any cleanup \cas{}es.
+
+
+\subsection{Doubly-linked List Benchmark}
+
+In this benchmark we operate on a shared ordered set object implemented from a doubly-linked list. The list supports search and update (insert and delete) operations. Insertions are done using 2-\cas{} and deletions are done using 3-\cas{}. We initialize the list by inserting a predefined (configurable) number of nodes. During the benchmark, each thread selects an operation type (search, insert or delete) at random, according to a configurable distribution; the thread also selects a value at random; it then performs the selected operation with the selected value.
+
+We perform this benchmark with three initial list sizes (5, 50 and 500 elements). The operation distribution is: 80\% reads, 20\% updates (in all our experiments, updates are evenly distributed among insertions and deletions). As is standard practice, the initial size of the list is half of the key range. Results are shown in the top row of Figure~\ref{fig:dll}. We also ran experiments with 50\%, 98\%, and 100\% reads;
+\begin{camera}
+performance graphs for these less representative cases are available in the full version of our paper~\cite{longversion}. 
+\end{camera}\begin{arxiv}%
+to improve readability, performance graphs for these less representative cases are deferred to Appendix~\ref{sec:extra-evaluation}.
+\end{arxiv}
+
+Our algorithm outperforms PMwCAS for list sizes 5 and 50 by 2.6$\times$ and 2.2$\times$ on average, respectively. 
+% This is due again to the lower degree of interference between operations. 
+This shows that under high and moderate contention, our algorithm's faster \mcas{} operations (due to the double effect of lower complexity and lower helping ratio) compensate for its slower read operations (due to the extra level of indirection), even in read-heavy workloads. In the low contention case (list size 500), PMwCAS outperforms our algorithm at low thread counts and is outperformed at high thread counts. On average, PMwCAS outperforms our algorithm by 1.2$\times$. Under low contention, operations have a low probability to conflict on the same element and thus the lower read complexity of PMwCAS has a stronger impact on performance than the lower \mcas{} complexity of our algorithm.
+
+% With 98\% reads, we observe a similar behavior, with our algorithm outperforming PMwCAS by 2.3$\times$ and 1.8$\times$ for list sizes 5 and 50 respectively; for list size 500, PMwCAS outperforms our algorithm by 1.29$\times$ on average.
+
+
+\subsection{B+-tree Benchmark}
+In this benchmark we operate on a B+-tree which supports search and update (insert and delete) operations. Insertions and deletions use $k$-\cas{}, where $k$ may vary, e.g., depending on whether the operation led to nodes being split or merged.
+
+Similar to the previous benchmark, we initialize the B+-tree with a configurable number of entries; threads then select operations and values at random. We perform the benchmark with 80\% reads and three initial tree sizes (16, 512, and 4000000). As for the previous benchmark, performance graphs for the 50\%, 98\% and 100\% reads cases are shown in
+\begin{camera}
+the full version of our paper~\cite{longversion}.
+\end{camera}\begin{arxiv}
+Appendix~\ref{sec:extra-evaluation}.
+\end{arxiv} 
+As before, the initial size of the tree is half of the key range. Results are shown in the bottom row of Figure~\ref{fig:dll}.
+
+We observe a similar behavior to the previous benchmark. Our algorithm outperforms PMwCAS under high and medium contention (because it performs fewer \cas{}es and triggers less helping) and is slightly outperformed under low contention (where helping no longer plays a major role). 

@@ -1,0 +1,9 @@
+[submodule "reference/kcas"]
+	path = reference/kcas
+	url = https://github.com/ocaml-multicore/kcas.git
+[submodule "reference/cs6868_s26"]
+	path = reference/cs6868_s26
+	url = https://github.com/fplaunchpad/cs6868_s26.git
+[submodule "reference/reagents"]
+	path = reference/reagents
+	url = https://github.com/ocaml-multicore/reagents.git

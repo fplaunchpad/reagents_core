@@ -1,0 +1,14 @@
+%!TEX root = ../main.tex
+
+\begin{abstract}
+Atomic lock-free multi-word compare-and-swap (\mcas) is a powerful tool for designing concurrent algorithms. 
+Yet, its widespread usage has been limited because lock-free implementations of \mcas{} make heavy use of expensive compare-and-swap (\cas) instructions. Existing \mcas{} implementations indeed use at least $2k+1$ \cas{}es per $k$-\cas{}. This leads to the natural desire to minimize the number of \cas{}es required to implement \mcas{}.
+
+We first prove in this paper that it is impossible to ``pack'' the information required to perform a $k$-word \cas{} ($k$-\cas{}) in less than $k$ locations to be \cas{}ed. Then we present the first algorithm that requires $k+1$ \cas{}es per call to $k$-\cas{} in the common uncontended case. 
+We implement our algorithm and show that it outperforms a state-of-the-art baseline 
+in a variety of benchmarks in most considered workloads.
+We also present a durably linearizable (persistent memory friendly) version of our \mcas{} algorithm using only $2$ persistence fences per call, while still only requiring $k+1$ \cas{}es per $k$-\cas{}.
+
+\end{abstract}
+
+

@@ -1,0 +1,94 @@
+%!TEX root = ../main.tex
+
+\section{System Model}
+\label{sec:model}
+\subsection{Volatile Memory}
+\label{sec:volatile-model}
+We assume a standard model of asynchronous shared memory~\cite{HW+91}, with basic atomic \emph{read}, \emph{write} and \emph{compare-and-swap} (\cas{}) operations.
+The latter receives three arguments---an address, an expected value and a new value; it reads the value stored in
+the given address and if it is equal to the expected value, atomically stores the new value in the given address, returning the indication of success or failure.
+
+\extabstract{
+A program is executed by $n$ deterministic threads, where $n$ can 
+be larger than the number of available processors.
+A scheduler decides which threads take execution steps, when and on which processor.
+We make no assumptions on the relative speeds of the processes.
+In particular, at any point in time, any thread can be suspended for arbitrarily long or even 
+indefinitely (e.g., if it crashes) between any of its two execution steps.
+
+Threads communicate through atomic operations on predefined set of shared memory locations or words.
+The available atomic operations are \emph{read}, \emph{write} and \emph{compare-and-swap} (\cas{}).
+The latter receives three arguments---an address, an expected value and a new value; it reads the value stored in
+the given address and if it is equal to the expected value, atomically stores the new value in the given address.
+In that case, we say that the \cas{} operation \emph{succeeds} (or \emph{is successful}).
+Otherwise, if the read value is different from the expected one, the \cas{} operation has no effect on the shared memory.
+In that case, we say that the \cas{} operation \emph{fails}.
+Upon its invocation, the \cas{} operation returns the indication of its success or failure.
+}
+
+Using those atomic operations, we implement an atomic \mcas{} operation with the following semantics.
+The \mcas{} operation receives an array of tuples, where each tuple contains an address, an expected value and a new value.
+For ease of presentation, we assume the size of the array is a known constant $N$.
+(In practice, the size of the array can be dynamic, and different for every \mcas{} operation.)
+The \mcas{} operation reads values stored in the given addresses, and if they all are equal to respective expected values, atomically
+writes new values to the corresponding address and returns an indication of success.
+Otherwise, if at least one read value is different from an expected one, the \mcas{} operation returns an indication of failure.
+We also provide a custom implementation of a read operation from a memory location that can be a 
+target of an \mcas{} operation (which, in the most general case, can be any shared memory location).
+
+Our \mcas{} implementation is \emph{linearizable}~\cite{HW+91}. 
+This means, informally, that each (read or \mcas{}) operation appears to take effect instantaneously 
+at some point in time in the interval during which the operation executes.
+In terms of progress, our \mcas{} implementation is \emph{non-blocking}.
+That is, a lack of progress of any thread (e.g., due to the suspension or failure of that thread) does not 
+prevent other threads from applying their operations. Furthermore, the \mcas{} implementation guarantees \emph{lock-freedom}.
+That is, given a set of threads applying operations, %(read of MCAS) 
+it guarantees that, eventually, at least one of those threads will complete its operation.
+
+Similar to many non-blocking algorithms, our design makes use of operation descriptors, which store information on 
+existing \mcas{} operations, including the status of the operation and the array of tuples with addresses and values.
+We assume each word in the shared memory can contain either a regular value or a pointer to such a descriptor.
+A similar assumption has been made in prior work on \mcas{}~\cite{feldman15, harris02, sundell11, wang18}.
+In practice, a single (e.g., least significant) bit can be used to distinguish between the two.
+
+Initialization of the descriptor is done before invocation of the \mcas{} operation.
+We assume that all the addresses in the descriptor are sorted in a monotonic total order.
+This assumption is crucial for the liveness property of our algorithm, buy can be easily lifted by explicitly sorting the array of tuples by corresponding addresses before an 
+\mcas{} operation is executed.
+
+
+\subsection{Persistent Memory}
+We extend the model in Section~\ref{sec:volatile-model} with standard assumptions about PM~\cite{cohen18, david18,FriedmanHMP18,izraelevitz16}.
+We assume the system is equipped with
+persistent shared memory that can be accessed through the same set of atomic primitives 
+(read, write and \cas{}). 
+The system may also be equipped with DRAM to be used as transient storage.
+As in previous work~\cite{izraelevitz16}, we assume that the overall system can crash at any time
+and possibly recover later. 
+On such a full-system crash, we assume that the contents of persistent memory---but not those of processor caches, registers or volatile memory---are preserved. 
+Moreover, threads that are active at the time of the crash are assumed to be lost
+forever and replaced by new threads in case of recovery. 
+After a full-system crash but before the system recovers and resumes normal execution, 
+we assume a \emph{recovery} routine may be executed, in order to bring persistent 
+memory-resident objects to a consistent state.
+The recovery routine can be executed in a single thread, and thus it does not have to 
+be thread-safe. 
+Another full-system crash, however, may occur during the recovery routine.
+
+As is standard practice~\cite{cohen18, david18, wang18}, we assume that a-priori there is no guarantee on when and 
+in what order cache lines are written back to persistent memory. 
+We assume the existence of two primitives to enforce such write backs. 
+The first primitive is \texttt{PERSISTENT\_FLUSH(addr)}, which takes as argument 
+a memory location and asynchronously writes the contents of that location to persistent memory. 
+Multiple invocations of this primitive are not ordered with respect to each other and thus 
+several flushes can proceed in parallel. 
+Concrete examples of this primitive are \texttt{clflushopt} and \texttt{clwb}~\cite{intel}.
+The second primitive is \texttt{PERSISTENT\_FENCE()}, which stalls the CPU until 
+any pending flushes are committed to persistent memory.
+A concrete example of this primitive is \texttt{sfence}~\cite{intel}. LOCK-prefixed instructions such as CAS also act as persistent fences~\cite{intel}.
+Since persistent flushes do not stall the CPU, whereas persistent fences do, the cost of writing to persistent memory is dominated by the latter instructions and we consider the cost of the former to be negligible. 
+
+Regarding initialization, we assume descriptor contents are made persistent before invocation of \mcas{}.
+
+The safety criterion we use when working with persistent memory is durable linearizability~\cite{izraelevitz16}. 
+Informally, an implementation of an object is durably linearizable if it is linearizable and has the following additional properties in case of a full-system crash and recovery: (1) all operations that completed before the crash are reflected in the post-recovery state and (2) if some operation $op$ that was ongoing at the time of the crash is reflected in the post-recovery state, then so are all the operations on which $op$ depends (i.e., operations whose effects $op$ observed and thus need to be linearized before $op$).

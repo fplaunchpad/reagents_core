@@ -1,0 +1,148 @@
+\usepackage{latexsym,amsmath,amsfonts,amssymb,stmaryrd,mathtools}
+\usepackage{amsthm}
+% \usepackage{authblk}% 
+% \usepackage{hyperref}
+\usepackage[nodate]{datetime}
+\usepackage{listings}
+\usepackage{graphicx}
+\usepackage{verbatim}
+\usepackage[T1]{fontenc}
+\usepackage[normalem]{ulem}
+\usepackage{booktabs}
+\usepackage{float}
+% \usepackage{enumitem}
+% \setlist{nosep}
+\usepackage[subtle]{savetrees}
+\usepackage{dashrule}
+\usepackage[utf8]{inputenc}
+\usepackage{tikz}
+\usepackage{pgfplots}
+\usepackage{tablefootnote}
+
+% \newtheorem{theorem}{Theorem}[section]
+% \newtheorem{lemma}[theorem]{Lemma}
+% \newtheorem{corollary}[theorem]{Corollary}
+% \newtheorem*{claim}{Claim}
+\newtheorem{fact}[theorem]{Fact}
+% \newtheorem{definition}{Definition}
+\newtheorem{observation}{Observation}
+\newtheorem{assumption}{Assumption}
+
+\newfloat{lstfloat}{!htb}{lop}
+\floatname{lstfloat}{Listing}
+\def\lstfloatautorefname{Listing} % needed for hyperref/auroref
+
+% \usepackage{longtable}
+
+\graphicspath{{./fig/}}%helpful if your graphic files are in another directory
+
+\newcommand{\cas}{\textsc{CAS}}
+\newcommand{\mcas}{\textsc{MCAS}}
+\newcommand{\llsc}{\textsc{LL/SC}}
+\newcommand{\pmcas}{\textsc{PMCAS}}
+\newcommand{\ttactive}{\texttt{ACTIVE}}
+\newcommand{\successful}{\texttt{SUCCESSFUL}}
+\newcommand{\failed}{\texttt{FAILED}}
+\newcommand{\worddescriptor}{\texttt{WordDescriptor}}
+\newcommand{\mcasdescriptor}{\texttt{MCASDescriptor}}
+\newcommand{\readInternal}{\texttt{readInternal}}
+\newcommand{\isDescriptor}{\texttt{isDescriptor}}
+\def\ttread{\texttt{read}}
+\def\ttnull{\texttt{NULL}}
+\newcommand{\todo}[1]{{\color{red} \bf [TODO: #1]}}
+\newcommand{\ignore}[1]{}
+\newcommand{\xparagraph}[1]{\smallskip\noindent\textsf{\textbf{#1}}\quad}
+
+
+
+\newcommand{\remove}[1] {}
+%\newcommand{\remove}[1] {#1}
+\newcommand{\extabstract}[1] {}
+\newcommand{\igor}[1]{\noindent
+    {\color{OliveGreen}{\textbf{Igor: }#1}}}
+
+\lstset{
+    language=C++,
+    basicstyle=\footnotesize\ttfamily,
+    numbers=left,
+    numberstyle=\tiny,
+    frame=tb,
+    breaklines=true,
+    postbreak=\mbox{\textcolor{red}{$\hookrightarrow$}\space},
+    % columns=fullflexible,
+    showstringspaces=false,
+    captionpos=t,
+    aboveskip=-2pt,
+    mathescape=true,
+    escapeinside={@}{@},
+    tabsize=2,
+    % moredelim=[is][\uline]{$}{$},
+    % moredelim=[is][\uline]{^}{^},
+    morekeywords={uint3_t,uint29_t,uint32_t,uint64_t,list_t,try_again},
+    xleftmargin=1.0ex
+}
+
+% \usepackage{titlesec}
+% \titlespacing*\section{0pt}{2.7pt plus 2pt minus 2pt}{1pt plus 1pt minus 0.5pt}
+% \titlespacing*\subsection{0pt}{1.5pt plus 2pt minus 1pt}{1pt plus 1pt minus 0.5pt}
+% \titlespacing*\subsubsection{0pt}{1.5pt plus 2pt minus 1pt}{1pt plus 1pt minus 0.5pt}
+% \titlespacing*\paragraph{0pt}{1.3pt plus 0.2pt minus 0.1pt}{1pt plus 1pt minus 0.5pt}
+% \titlespacing*\subparagraph{0pt}{1.3pt plus 0.2pt minus 0.1pt}{1pt plus 1pt minus 0.5pt}
+% \titleformat*{\subsection}{\large\bfseries}
+
+
+% \renewcommand{\arraystretch}{0.91}
+% \setlength{\tabcolsep}{4pt}
+% \setlength{\textfloatsep}{4pt}
+% \setlength{\dbltextfloatsep}{4pt}
+
+%\setlength{\itemsep}{0pt}
+% \setlength{\topsep}{1pt}
+% \setlength{\parsep}{1pt}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%% PGFPLOTS &&&&&&&&&&&&&&&
+% Options for plotting with pgfplots
+\usetikzlibrary{
+    pgfplots.colorbrewer,
+} 
+\pgfplotsset{compat=newest}
+\pgfplotsset{
+    tick label style={font=\small},
+    label style={font=\small},
+    legend style={font=\footnotesize},
+    % every mark/.append style={solid},
+    every axis/.append style={line width=1pt},
+    % every axis plot/.append style={line width=1.5pt},
+    cycle list name=exotic,
+    % colormap name=viridis,
+    % cycle list/RdGy-6,
+    % cycle multiindex* list={
+    %     RdGy-6
+    %         \nextlist
+    %     mark list*
+    %         \nextlist
+    %     linestyles*
+    %         \nextlist
+    %     very thick
+    %         \nextlist
+    % },
+    cycle list/.define={my marks}{
+        every mark/.append style={solid,fill=\pgfkeysvalueof{/pgfplots/mark list fill}},mark=*\\
+        every mark/.append style={solid,fill=\pgfkeysvalueof{/pgfplots/mark list fill}},mark=square*\\
+        every mark/.append style={solid,fill=\pgfkeysvalueof{/pgfplots/mark list fill}},mark=triangle*\\
+        every mark/.append style={solid,fill=\pgfkeysvalueof{/pgfplots/mark list fill}},mark=diamond*\\
+    },
+    mark list fill={.!75!white},
+    cycle multiindex* list={
+        exotic
+            \nextlist
+        my marks
+            \nextlist
+        linestyles*
+            \nextlist
+        very thick
+            \nextlist
+    },
+}
+\usepgfplotslibrary{groupplots}

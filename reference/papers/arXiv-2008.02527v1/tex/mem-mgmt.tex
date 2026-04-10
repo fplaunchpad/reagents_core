@@ -1,0 +1,65 @@
+%!TEX root = ../main.tex
+
+\section{Memory Management}
+\label{sec:mem-mgmt}
+
+The \mcas{} algorithm has been presented so far under the assumption that no memory is ever reclaimed.
+For practical considerations, however, one should to be able to reclaim and/or reuse \mcas{} operation descriptors.
+While efficient memory management of concurrent data structures remains an active area of research 
+(see, e.g.,~\cite{alistarh17,Brown15, DHK16,poter18,wen18}),
+here we describe one possible mechanism suitable for an \mcas{} implementation. 
+\begin{camera} 
+Due to space limitations, we briefly outline the mechanism here and defer its full description, as well as optimizations for persistent memory and efficient reads, to the extended version of our paper~\cite{longversion}.
+\end{camera}\begin{arxiv}
+We briefly outline the mechanism here and defer its full description, as well as optimizations for persistent memory and efficient reads, to Appendices~\ref{sec:mem-mgt-app} through~\ref{sec:reads}.
+\end{arxiv}
+
+We note that the life cycle of an operation descriptor comprises several phases.
+Once its status is no longer \texttt{ACTIVE}, the (finalized) descriptor cannot be recycled just yet as certain memory locations can point to it.
+Therefore, we need first to \emph{detach} such a descriptor by replacing the pointers to the descriptor (using \cas{}) with actual values 
+(respective to whether the corresponding \mcas{} has succeeded or failed) in affected memory locations.
+Only after that, a detached descriptor can be recycled, provided no concurrently running thread holds a
+reference to it.
+Note that \cas{}es in the detachment phase are necessary only for those affected memory locations that still point to the to-be-detached descriptor, which, as our evaluation shows, is rare in practice.
+
+Our scheme keeps track of two categories of descriptors: (1) those that have been finalized but not yet detached and (2) those that have been detached but to which other threads might still hold references. Similar to RCU approaches~\cite{McKenney17, MS98}, we use thread-local epoch counters to track threads' progress and infer when a descriptor can be moved from category (1) to category (2), and when a descriptor from category (2) can be reclaimed.
+
+ 
+
+\remove{
+\subsection{Efficient Reads}
+Once a memory location has been modified by an \mcas\ operation, even if by a failed one, it would
+refer to an operation descriptor until that descriptor is detached.
+Until that happens, the latency of a read operation from that memory location would be increased as it would have to access  
+an operation descriptor to determine the value that needs to be returned by the read.
+The memory management mechanism as described above, however, would detach the descriptor only
+as a part of an \mcas\ operation.
+This might cause degraded performance for read-dominated workloads in which \mcas\ operations are rare.
+
+To this end, we propose the following optimization for eventual removal of references to an operation descriptor 
+and storing the corresponding value directly in the memory location as part of the read operation.
+If a read operation finds a pointer to a finalized operation descriptor, it will generate a pseudo-random number\footnote{Generating 
+a local pseudo-random number is a relatively inexpensive operation that requires only a few processor cycles (see, for instance, the generator in ASCYLIB~\cite{ascylibcode}.)}.
+With a small probability, it will run a simplified version of the memory reclamation scheme described above.
+Specifically, it will scan epochs of all other threads, and then change the contents of the memory location it attempts to read
+to the actual value (using \cas{}).
+(To avoid deadlock between two threads scanning epoch numbers, a thread may indicate that it is in the middle of an epoch scan
+so that any descriptor can be detached, but not recycled at that time.)
+
+\subsection{Managing Persistent Memory}
+Upon recovery from a crash, any pending \pmcas\ operation is applied using the same algorithm as presented in Listing~\ref{list:algo}.
+Pending \pmcas\ operations can be found by scanning allocated descriptors (e.g., if descriptors are allocated from a pool, similar to David et al.~\cite{david18}).
+Moreover, since we assume the recovery is done by a single thread, we can immediately 
+detach and recycle any finalized descriptor (after writing back the actual values into corresponding memory locations).
+Therefore, when considering persistent memory, 
+the only change required to support correct recycling of descriptors (in addition to using a persistent memory allocator) is
+flushing all writes while detaching descriptors and introducing a persistent fence 
+right before reclaiming descriptors from \texttt{detachedDescList}.
+The fence is required to avoid a situation where a detached descriptor is recycled and a crash happens while 
+the descriptor is being initialized with new values.
+In this case, and if a fence is not used, 
+some memory locations may still point to the descriptor (since updates to those locations might have not been persisted before the crash), 
+while the descriptor may already be updated with new content.
+Note, though, that the flushes and the fence take place off the critical path, 
+therefore their impact on the performance of \pmcas\ is expected to be negligible.
+}

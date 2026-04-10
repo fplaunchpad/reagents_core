@@ -1,0 +1,12 @@
+\section{Conclusion}
+\label{sec:conclusion}
+
+%Answering the question raised by this paper introduces another, broader, question: \textit{Is it true in general that operations which access $k$ locations atomically (call them $k$-primitives) require exactly $k$ \cas{}es?} Brown et al.'s work on \textsc{LLX/SCX}~\cite{brown13} hints in this direction: it uses $k+1$ ($\simeq k$) \cas{}es to perform an atomic operation that depends on $k$ records. Another question arises: \textit{If not all $k$-primitives require $k$ \cas{}es, are those $k$-primitives that require more \cas{}es fundamentally more powerful than those that require less \cas{}es?}
+
+Atomic multi-word primitives significantly simplify concurrent algorithm design, but existing implementations have high overhead. In this paper, we propose a simple and efficient lock-free algorithm for multi-word compare-and-swap, designed for both volatile and persistent memory. 
+%Our algorithm improves upon previous work by requiring only $k+1$ \cas{} instructions to perform a $k$-word \mcas\ in the uncontended case; the persistent version of our algorithm requires only two persistent fences per \mcas\ operation. 
+The complimentary lower bound shows that the complexity of our algorithm, as measured in the
+number of \cas{}es in the uncontended case, is nearly optimal.
+
+
+% This work opens several interesting research directions. First, we conjecture that any lock-free disjoint-access-parallel implementation of \mcas\ from shared registers and \cas{} requires at least one \mcas\ instruction per target location; this would make our algorithms close to optimal. We plan on developing a proof of this conjecture. Second, our current cleanup phase uses one \cas{} per target location (this cost is amortized if several overlapping \mcas\ operations execute before cleanup). We intend to investigate whether it is possible to design a cleanup mechanism that avoids using expensive atomic primitives altogether. Finally, recent work~\cite{cohen18} has shown that any durably linearizable lock-free algorithm can be implemented using one persistent fence per operation. It is interesting to examine whether our persistent algorithm can be modified to also use one persistent fence per \mcas\ operation, while maintaining the disjoint-access-parallel property.

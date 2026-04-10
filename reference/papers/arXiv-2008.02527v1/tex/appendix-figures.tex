@@ -1,0 +1,150 @@
+\begin{figure*}
+\centering
+\begin{tikzpicture}
+	
+    \begin{groupplot}[
+        group style=    {group name=my plots,
+                        group size=3 by 3,
+                        horizontal sep=0.7cm,
+                        vertical sep=1.3cm},
+        height=3.6cm,
+        width=5.2cm,
+        ytick scale label code/.code={},
+        legend columns=-1,
+        xlabel={Number of Threads},
+    ]
+        
+    % Row 1
+    \nextgroupplot[
+        ylabel = {Throughput (Mops/s)},
+        legend entries={AOPT,PMWCAS},
+        legend to name=CommonLegend4,    
+    ]
+    \addplot table[x=Threads,y=AOPT] {data/dl-list/dl-list-list_size-5-search_pct-50-absolute-perf.log};
+    \addplot table[x=Threads,y=PMWCAS] {data/dl-list/dl-list-list_size-5-search_pct-50-absolute-perf.log};
+    \nextgroupplot
+    \addplot table[x=Threads,y=AOPT] {data/dl-list/dl-list-list_size-50-search_pct-50-absolute-perf.log};
+    \addplot table[x=Threads,y=PMWCAS] {data/dl-list/dl-list-list_size-50-search_pct-50-absolute-perf.log};
+    \nextgroupplot
+    \addplot table[x=Threads,y=AOPT] {data/dl-list/dl-list-list_size-500-search_pct-50-absolute-perf.log};
+    \addplot table[x=Threads,y=PMWCAS] {data/dl-list/dl-list-list_size-500-search_pct-50-absolute-perf.log};
+    
+    % Row 2
+    \nextgroupplot[ylabel = {Throughput (Mops/s)}]
+    \addplot table[x=Threads,y=AOPT] {data/dl-list/dl-list-list_size-5-search_pct-98-absolute-perf.log};
+    \addplot table[x=Threads,y=PMWCAS] {data/dl-list/dl-list-list_size-5-search_pct-98-absolute-perf.log};
+    \nextgroupplot
+    \addplot table[x=Threads,y=AOPT] {data/dl-list/dl-list-list_size-50-search_pct-98-absolute-perf.log};
+    \addplot table[x=Threads,y=PMWCAS] {data/dl-list/dl-list-list_size-50-search_pct-98-absolute-perf.log};
+    \nextgroupplot
+    \addplot table[x=Threads,y=AOPT] {data/dl-list/dl-list-list_size-500-search_pct-98-absolute-perf.log};
+    \addplot table[x=Threads,y=PMWCAS] {data/dl-list/dl-list-list_size-500-search_pct-98-absolute-perf.log};  
+    
+    % Row 3
+    \nextgroupplot[ylabel = {Throughput (Mops/s)}]
+    \addplot table[x=Threads,y=AOPT] {data/dl-list/dl-list-list_size-5-search_pct-100-absolute-perf.log};
+    \addplot table[x=Threads,y=PMWCAS] {data/dl-list/dl-list-list_size-5-search_pct-100-absolute-perf.log};
+    % \addplot table[x=Threads,y=AOPT-unsafe] {data/dl-list/dl-list-list_size-5-search_pct-100-absolute-perf.log};
+    \nextgroupplot
+    \addplot table[x=Threads,y=AOPT] {data/dl-list/dl-list-list_size-50-search_pct-100-absolute-perf.log};
+    \addplot table[x=Threads,y=PMWCAS] {data/dl-list/dl-list-list_size-50-search_pct-100-absolute-perf.log};
+    % \addplot table[x=Threads,y=AOPT-unsafe] {data/dl-list/dl-list-list_size-50-search_pct-100-absolute-perf.log};
+    \nextgroupplot
+    \addplot table[x=Threads,y=AOPT] {data/dl-list/dl-list-list_size-500-search_pct-100-absolute-perf.log};
+    \addplot table[x=Threads,y=PMWCAS] {data/dl-list/dl-list-list_size-500-search_pct-100-absolute-perf.log};
+    % \addplot table[x=Threads,y=AOPT-unsafe] {data/dl-list/dl-list-list_size-500-search_pct-100-absolute-perf.log};
+    
+    \end{groupplot}
+	
+	\node[anchor=south,rotate=90,yshift=1.2cm] at ($(my plots c1r1.west)$){{\Large\bf 50\% Reads}};
+	\node[anchor=south,rotate=90,yshift=1.2cm] at ($(my plots c1r2.west)$){{\Large\bf 98\% Reads}};
+	\node[anchor=south,rotate=90,yshift=1.2cm] at ($(my plots c1r3.west)$){{\Large\bf 100\% Reads}};
+
+    \node[anchor=south,yshift=0.2cm] at ($(my plots c1r1.north)$){\Large \bf List Size 5};
+    \node[anchor=south,yshift=0.2cm] at ($(my plots c2r1.north)$){\Large \bf List Size 50};
+    \node[anchor=south,yshift=0.2cm] at ($(my plots c3r1.north)$){\Large \bf List Size 500};
+
+
+% 	\end{axis}
+\end{tikzpicture}
+\\
+
+\ref{CommonLegend4}
+\caption{Doubly-linked list benchmark. Top row shows results for 50\% reads workload; middle row shows results for 98\% reads workload; bottom row shows results for 100\% reads workload. Each column corresponds to a different initial list size (5, 50 and 500 elements, respectively).}
+\label{fig:dll-appendix}
+\end{figure*}
+
+\begin{figure*}
+\centering
+\begin{tikzpicture}
+	
+    \begin{groupplot}[
+        group style=    {group name=my plots,
+                        group size=3 by 3,
+                        horizontal sep=0.7cm,
+                        vertical sep=1.3cm},
+        height=3.6cm,
+        width=5.2cm,
+        ytick scale label code/.code={},
+        legend columns=-1,
+        xlabel={Number of Threads},
+    ]
+        
+    % Row 1
+    \nextgroupplot[
+        ylabel = {Throughput (Mops/s)},
+        legend entries={AOPT,PMWCAS},
+        legend to name=CommonLegend5,
+    ]
+    \addplot table[x=Threads,y=AOPT] {data/bztree/bztree-tree_size-16-search_pct-50-absolute-perf.log};
+    \addplot table[x=Threads,y=PMWCAS] {data/bztree/bztree-tree_size-16-search_pct-50-absolute-perf.log};
+    \nextgroupplot
+    \addplot table[x=Threads,y=AOPT] {data/bztree/bztree-tree_size-512-search_pct-50-absolute-perf.log};
+    \addplot table[x=Threads,y=PMWCAS] {data/bztree/bztree-tree_size-512-search_pct-50-absolute-perf.log};
+    \nextgroupplot
+    \addplot table[x=Threads,y=AOPT] {data/bztree/bztree-tree_size-4000000-search_pct-50-absolute-perf.log};
+    \addplot table[x=Threads,y=PMWCAS] {data/bztree/bztree-tree_size-4000000-search_pct-50-absolute-perf.log};
+    
+    % Row 2
+    \nextgroupplot[ylabel = {Throughput (Mops/s)}]
+    \addplot table[x=Threads,y=AOPT] {data/bztree/bztree-tree_size-16-search_pct-98-absolute-perf.log};
+    \addplot table[x=Threads,y=PMWCAS] {data/bztree/bztree-tree_size-16-search_pct-98-absolute-perf.log};
+    \nextgroupplot
+    \addplot table[x=Threads,y=AOPT] {data/bztree/bztree-tree_size-512-search_pct-98-absolute-perf.log};
+    \addplot table[x=Threads,y=PMWCAS] {data/bztree/bztree-tree_size-512-search_pct-98-absolute-perf.log};
+    \nextgroupplot
+    \addplot table[x=Threads,y=AOPT] {data/bztree/bztree-tree_size-4000000-search_pct-98-absolute-perf.log};
+    \addplot table[x=Threads,y=PMWCAS] {data/bztree/bztree-tree_size-4000000-search_pct-98-absolute-perf.log};    
+    
+    \nextgroupplot[ylabel = {Throughput (Mops/s)}]
+    \addplot table[x=Threads,y=AOPT] {data/bztree/bztree-tree_size-16-search_pct-100-absolute-perf.log};
+    \addplot table[x=Threads,y=PMWCAS] {data/bztree/bztree-tree_size-16-search_pct-100-absolute-perf.log};;
+    % \addplot table[x=Threads,y=AOPT-unsafe] {data/bztree/bztree-tree_size-16-search_pct-100-absolute-perf.log};
+    \nextgroupplot
+    \addplot table[x=Threads,y=AOPT] {data/bztree/bztree-tree_size-512-search_pct-100-absolute-perf.log};
+    \addplot table[x=Threads,y=PMWCAS] {data/bztree/bztree-tree_size-512-search_pct-100-absolute-perf.log};
+    % \addplot table[x=Threads,y=AOPT-unsafe] {data/bztree/bztree-tree_size-512-search_pct-100-absolute-perf.log};
+    \nextgroupplot
+    \addplot table[x=Threads,y=AOPT] {data/bztree/bztree-tree_size-4000000-search_pct-100-absolute-perf.log};
+    \addplot table[x=Threads,y=PMWCAS] {data/bztree/bztree-tree_size-4000000-search_pct-100-absolute-perf.log};
+    % \addplot table[x=Threads,y=AOPT-unsafe] {data/bztree/bztree-tree_size-4000000-search_pct-100-absolute-perf.log};
+    
+    \end{groupplot}
+	
+	\node[anchor=south,rotate=90,yshift=1cm] at ($(my plots c1r1.west)$){{\Large\bf 50\% Reads}};
+	\node[anchor=south,rotate=90,yshift=1cm] at ($(my plots c1r2.west)$){{\Large\bf 98\% Reads}};
+	\node[anchor=south,rotate=90,yshift=1cm] at ($(my plots c1r3.west)$){{\Large\bf 100\% Reads}};
+
+    \node[anchor=south,yshift=0.2cm] at ($(my plots c1r1.north)$){\Large \bf Tree Size 16};
+    \node[anchor=south,yshift=0.2cm] at ($(my plots c2r1.north)$){\Large \bf Tree Size 512};
+    \node[anchor=south,yshift=0.2cm] at ($(my plots c3r1.north)$){\Large \bf Tree Size 4000000};
+
+
+% 	\end{axis}
+\end{tikzpicture}
+\\
+
+\ref{CommonLegend5}
+\caption{B+-tree benchmark. Top row shows results for 50\% reads workload; middle row shows results for 98\% reads workload; bottom row shows results for 100\% reads workload. Each column corresponds to a different initial tree size (16, 512 and 4000000 elements, respectively).}
+\label{fig:btree-appendix}
+\end{figure*}

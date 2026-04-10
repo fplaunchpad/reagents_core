@@ -1,0 +1,73 @@
+
+
+\section{Related Work}
+\label{sec:related-work}
+
+\xparagraph{Lock- and wait-free implementations of \mcas{}.} 
+Our algorithm shares similarities with previous work~\cite{harris02,wang18}: as has become standard practice, it uses operation descriptors and a three-phase design (locking, status-change and unlocking). However, our algorithm introduces key differences with respect to previous work: it defers the unlocking phase and combines it with the reclamation of descriptors, without compromising correctness. This deferment has a triple beneficial effect on complexity: (1) it removes $k$ \cas{}es from the critical path, (2) it allows these \cas{}es to be amortized across several operations, and (3) it removes the onus of ABA-prevention from the locking phase, thus shaving off $k$ further \cas{}es from the latter.
+
+Table~\ref{comparison} summarizes the differences between our algorithm and  existing non-blocking \mcas{} implementations, while the detailed treatment of each of the numerous prior efforts is deferred to
+\begin{camera} 
+the full version of our paper~\cite{longversion}.
+\end{camera}\begin{arxiv}
+Appendix~\ref{sec:related-non-blocking-mcas}. 
+\end{arxiv} 
+The results in Table~\ref{comparison} reflect the number of \cas{}es per \mcas{} operation required for correctness by each algorithm in the common uncontended case.
+We note that previous \mcas{} implementations perform descriptor cleanup immediately after applying \mcas{}, and it is not clear how to separate cleanup from these algorithms while preserving correctness.
+% In our case, the cleanup is deferred, resulting in conceptually simpler algorithms and making it possible to amortize the cost of the cleanup across several \mcas{} calls.
+If we take the cleanup cost into consideration for our algorithm as well, its theoretical (worst-case) complexity becomes $2k+1$, the same as some of the previous work.
+As our experiments in Section~\ref{sec:eval} demonstrate,
+however, the number of \cas{}es in the cleanup phase is negligible in practice. Furthermore, we highlight the fact that unlike most previous work, including the one that employs $2k+1$ \cas{}es, readers in our case do not write into the shared memory in the common case, even when cleanup is considered.
+% Ultimately, as we mention in Section~\ref{sec:intro}, determining the practical merit of all these considerations requires further experimental evaluation and is left for future work.
+
+
+\begin{table}
+\centering
+\caption{Comparison of non-blocking \mcas{} implementations in terms of the number of \cas{} instructions required, whether readers perform writes to shared memory or expensive atomic instructions, and the number of persistent fences (all per $k$-word \mcas{}, in the uncontended case). }
+\begin{tabular}{@{}llll@{}}
+  \toprule
+         & \cas{}es & Readers write & P. fences \tabularnewline
+  \midrule
+  Israeli and Rappoport~\cite{israeli94} & $3k+2$ & Yes & N/A \tabularnewline
+  Anderson and Moir~\cite{anderson95} & $3k+2$ & Yes & N/A \tabularnewline
+  Moir~\cite{moir97} & $3k+4$ & Yes & N/A \tabularnewline
+  Harris et al.~\cite{harris02} & $3k+1$ & No & N/A \tabularnewline
+  Ha and Tsigas~\cite{ha03,ha04} & $2k+2$ & Yes & N/A \tabularnewline
+  Attiya and Hillel~\cite{attiya11} & $6k+2$ & N/A & N/A \tabularnewline
+  Sundell~\cite{sundell11} & $2k+1$ & Yes & N/A\tabularnewline
+  Feldman et al.~\cite{feldman15} & $3k-1$ & Yes & N/A \tabularnewline
+  % Pavlovic et al.~\cite{pavlovic18} & N/A & No & 3 \tabularnewline
+  Wang et al.~\cite{wang18} (volatile) & $3k+1$ & No & N/A \tabularnewline
+  Wang et al.~\cite{wang18} (persistent) & $5k+1$ & No & $2k+1$ \tabularnewline
+  \midrule\midrule
+  {\bf Our algorithm} & $k+1$ & No & 2 \tabularnewline
+  \bottomrule
+\end{tabular}
+\label{comparison}
+\end{table}
+
+\xparagraph{General techniques.}
+Transactional memory (TM)~\cite{herlihy93a,shavit95} can be seen as the most general approach to  providing atomic access to multiple objects. It allows a block of code to be designated as a transaction and thus executed atomically, with respect to other transactions. Thus, TM is strictly more general than \mcas{}. This generality comes at a cost: software implementations of transactional memory (STM) have prohibitive performance overheads, whereas hardware support (HTM) is subject to spurious aborts and thus only provides ``best-effort'' guarantees. Prior work on nonblocking STMs~\cite{Fraser04, MaratheM08} share goals similar to our work; namely reduction of overheads in the
+critical path.  However, these works (i) either employ $k$ extra cleanup CASes~\cite{Fraser04} on the critical path, incurring
+precisely the overheads we avoid in our work, or (ii) employ a vastly more complex ``stealing'' framework to
+avoid overheads from the critical path~\cite{MaratheM08}.
+
+\begin{camera} 
+\end{camera}\begin{arxiv}
+As any concurrent object, \mcas{} can be implemented using a universal construction~\cite{herlihy93}, but such an implementation is not disjoint-access-parallel and has high overhead.
+\end{arxiv}
+
+\xparagraph{Prior Work on Persistent \mcas{}.}
+Pavlovic et al.~\cite{pavlovic18} provide an implementation of \mcas{} for persistent memory which differs from ours in the progress guarantee (theirs is blocking) and hardware assumpions (theirs uses HTM). 
+\begin{camera} 
+\end{camera}\begin{arxiv} 
+In their algorithm, a transaction is used to atomically verify expected values and acquire ownership of all target locations. In case of success, the new values are written non-transactionally. Reads that encounter a location owned by an \mcas{} operation block until the location is no longer owned.
+\end{arxiv}
+
+Wang et al.~\cite{arulraj18,wang18} introduce the first lock-free persistent implementation, based on the algorithm of Harris et al.~\cite{harris02}. The main differences with respect to our algorithm are outlined in Table~\ref{comparison}. This algorithm uses a per-word dirty flag to indicate that the word is not yet guaranteed to be written to persistent memory. Operations encountering a set dirty flag will persist the associated word and then unset the flag. This technique avoids unnecessary persistent flushes, but uses 2 extra \cas{} instructions per target location in order to manipulate the dirty flag. \begin{camera}
+\end{camera}\begin{arxiv}
+In total, this algorithm uses $5k+1$ \cas{} instructions for a $k$-word \mcas{} in the uncontended case. Their implementation does not use explicit persistent fences; instead, it relies on the \cas{} instructions that are already required to unset the dirty flag to also enforce ordering among write backs~\cite{intel}. Their original algorithm uses $2k+1$ such ``\cas{}-fences'', but we believe it can be modified to only require 3 persistent fences.
+\end{arxiv}
+
+In our work we use the recent durable linearizability correctness condition~\cite{izraelevitz16}, which assumes a full-system crash-recovery model, but other models of persistent memory can be explored in this context~\cite{aguilera2003strict, BerryhillGT15, ConditNFILBC09, GuerraouiL04, PelleyCW15}.
+

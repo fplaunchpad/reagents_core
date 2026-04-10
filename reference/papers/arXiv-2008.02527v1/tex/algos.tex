@@ -1,0 +1,183 @@
+%!TEX root = ../main.tex
+
+\section{Volatile \mcas{} with \texorpdfstring{$k+1$}{k+1} \cas{}}
+\label{sec:algos}
+
+In this section we describe our \mcas\ construction for volatile memory.
+Our algorithm uses $k+1$ \cas{} operations in the common uncontended case, and does not involve cleaning up after completed \mcas\ operations.
+% In Section~\ref{sec:persistent-mcas} we extend the algorithm so it works correctly with persistent memory.
+In Section~\ref{sec:mem-mgmt} we describe a memory management scheme that can
+be used to clean up after completed \mcas\ operations as well as for reclaiming or reusing
+operation descriptors employed by the algorithm.
+
+\subsection{High-level Description}
+
+As is standard practice~\cite{ha04, harris02, sundell11}, our \mcas{} construction supports two operations: \mcas\ and \ttread. 
+Similarly to most \mcas\ algorithms~\cite{ha04, harris02, sundell11}, the \mcas\ operation uses operation descriptors that contain
+a set of addresses (the \emph{target} addresses or words), and \emph{old} and \emph{new} values for each target address.
+In addition, each operation descriptor contains a \emph{status} word indicating the status of the corresponding \mcas\ operation.
+
+The \mcas\ operation proceeds in two stages. 
+In the first stage, we attempt to install a pointer to the operator descriptor in each memory word 
+targeted by the \mcas\ operation.
+If we succeed to install the pointer, we say that the target address is \emph{owned} (or \emph{locked}) by the descriptor.
+The first stage ends when all target addresses are owned by the descriptor, or if we find
+a target address with a value different from the expected one.
+In the second stage, we \emph{finalize} the \mcas\ operation by atomically changing its status 
+to indicate its success or failure, depending on whether the first stage was successful (i.e., all target addresses have been locked).
+The \ttread\ operation returns the current value at an address, either by reading it directly from the target address 
+or by reading the appropriate value from a descriptor of a completed \mcas\ operation installed in that address.
+If either \mcas\ or \ttread\ encounter another \mcas\ in progress (e.g., when they attempt to
+read the current value in the target address), they first help that \mcas\ operation to complete.
+
+%An \mcas\ operation is defined by a set of addresses (the \emph{target} addresses or words) and a \emph{new} and \emph{old} value for each target address. \mcas\ performs the following \emph{atomically}: if the %contents of every target address matches its old (expected) value, then write the new value in each target address and return \texttt{true}. Otherwise, do nothing and return \texttt{false}. 
+
+\subsection{Technical Details}
+
+\xparagraph{Structures and Terminology.}
+We describe the structures used by our algorithm and explain the terminology. 
+Pseudocode for the structures is shown in Listing~\ref{list:struct}. 
+An \mcasdescriptor\ describes an \mcas{} operation. It contains a status field, which can be \ttactive, \successful\ or \failed, 
+the number \texttt{N} of words targeted by the \mcas{} and an array of {\worddescriptor}s for those words. 
+These {\worddescriptor}s are the \emph{children} of the \mcasdescriptor, who is their \emph{parent}. 
+We say that an \mcasdescriptor\ (and the \mcas\ it describes) is \emph{active} if its status is \ttactive\ and 
+\emph{finalized} otherwise. 
+%We say that an \mcasdescriptor\ $m$ owns a target address if that address points to one of $m$'s {\worddescriptor}s.
+
+The \worddescriptor\ contains information related to a given word as target of an \mcas{} operation: the word's address in memory, its expected value and the new intended value. 
+The \worddescriptor\ also contains a pointer to the descriptor of its parent \mcas\ operation.
+As described later, the pointer is used as an optimization for fast lookup of the status field in the \mcasdescriptor, and can be eliminated.
+
+\begin{lstlisting}[caption={Data structures used by our algorithm},label=list:struct,numbers=none,float,keywords={}]
+struct WordDescriptor {
+    void* address;
+    uintptr_t old;
+    uintptr_t new;
+    MCASDescriptor* parent; };
+    
+enum StatusType { ACTIVE, SUCCESSFUL, FAILED };
+
+struct MCASDescriptor {
+    StatusType status;
+    size_t N;
+    WordDescriptor words[N]; };
+\end{lstlisting}
+
+
+\begin{lstlisting}[caption={The \readInternal\ auxiliary function, used by our algorithm.},label=list:readInternal,float,keywords={}]
+readInternal(void* addr, MCASDescriptor *self) {@\label{r_i_begin}@
+retry_read:							
+	val = *addr;@\label{read-internal-first-read}@
+	if (!isDescriptor(val))@\label{read-internal-line4}@ then return <val,val>;@\label{read-internal-line5}@
+	else { // found a descriptor@\label{read-internal-line6}@
+		MCASDescriptor* parent = val->parent;@\label{read-internal-line7}@
+		if (parent != self && parent->status == ACTIVE) {@\label{read-internal-check}@
+			MCAS(parent);@\label{mcas-help}@
+			goto retry_read;@\label{read-internal-retry}@
+		} else {@\label{read-internal-line11}@
+			return parent->status == SUCCESSFUL ?
+			    <val,val->new> : <val,val->old>;@\label{read-internal-line12}@ }  }  }@\label{r_i_end}@
+\end{lstlisting}
+
+\begin{lstfloat}
+\begin{lstlisting}[caption={Our main algorithm. Commands in {\it italic} are related to memory reclamation (discussed in a later section).},label=list:algo,firstnumber=last,keywords={}]
+read(void* address) { @\label{read_begin}@
+	@{\it epochStart();}@@\label{read-epoch-start}@
+	<content, value> = readInternal(address, NULL);@\label{read-line2}@
+	@{\it epochEnd();}@@\label{read-epoch-end}@
+	return value; } @\label{read_end}@
+
+MCAS(MCASDescriptor* desc) {
+	@{\it epochStart();}@
+	success = true;
+	for wordDesc in desc->words {@\label{mcas-first-phase-begin}@
+retry_word:
+		<content, value> = readInternal(wordDesc.address, desc); @\label{mcas-readinternal}@
+		// if this word already points to the right place, move on
+		if (content == &wordDesc) continue;@\label{disregarded}@
+		// if the expected value is different, the MCAS fails
+		if (value != wordDesc.old) {@\label{doomed-start}@ success = false; break; @\label{for-break}@ }@\label{doomed-end}@
+		if (desc->status != ACTIVE) break; @\label{status-check}@
+		// try to install the pointer to my descriptor; if failed,	retry
+		if (!CAS(wordDesc.address, content, &wordDesc)) @\label{mcas-acquire}@goto retry_word;@\label{mcas-retry}@ }@\label{mcas-first-phase-end}@
+	if (CAS(&desc.status, ACTIVE, success ? SUCCESSFUL : FAILED)){@\label{mcas-finalize}@
+		// if I finalized this descriptor, mark it for reclamation
+		@{\it retireForCleanup(desc);}@@\label{retire-for-cleanup}@ }@\label{mcas-finalize-end}@
+	returnValue = (desc.status == SUCCESSFUL);
+	@{\it epochEnd();}@
+	return returnValue; }
+\end{lstlisting}
+\end{lstfloat}
+
+\xparagraph{Algorithm.}
+%As is standard practice~\cite{}, our MCAS construction supports two operations: \ttread\ and \mcas. At a high level, a \ttread\ returns the current value at an address, either directly or by reading the appropriate value from a %finalized descriptor. The \mcas\ operation proceeds in two steps. In the first step, we attempt to install a \worddescriptor\ in each memory word targeted by the MCAS operation. In the second step, we \emph{finalize} the %MCAS operation by atomically switching its status from \ttactive\ to either \successful\ or \failed, depending on whether the first step was successful or not.
+Both \mcas\ and \ttread\ operations rely on the auxiliary \readInternal\ function shown in Listing~\ref{list:readInternal}. 
+The \readInternal\ function takes an address \texttt{addr} and an \mcasdescriptor\ \texttt{self} (called the \emph{current descriptor}) and returns a tuple. 
+The tuple contains two values (which might be identical), and, intuitively, represent the contents in the given (target) address and the actual value 
+the former represents.
+More specifically, \readInternal\  reads the content of the given \texttt{addr} (Line~\ref{read-internal-first-read}). 
+If \texttt{addr} does not point to a descriptor (this is determined by the \isDescriptor\ function; see below), the returned tuple contains two copies of the contents of \texttt{addr} (Line~\ref{read-internal-line5}).
+If \texttt{addr} points to an active \worddescriptor\ whose parent is not the same as \texttt{self}, then \readInternal\ helps the other (\mcas) 
+operation to complete (Line~\ref{mcas-help}) and then restarts (Line~\ref{read-internal-retry}).
+Therefore, the role of the \texttt{self} pointer is to avoid an (\mcas) operation to help itself recursively.
+If \texttt{addr} points to a finalized descriptor, the tuple returned by \readInternal\ contains 
+the pointer to the descriptor and the final value, corresponding to the status of the descriptor (Line~\ref{read-internal-line12}).
+Finally, if \texttt{addr} points to a descriptor whose parent is equal to \texttt{self}, 
+then \readInternal\ returns the pointer to that descriptor (Line~\ref{read-internal-line12}; a value is also returned in the tuple in this case, but is disregarded; see below).
+
+Listing~\ref{list:algo} provides the pseudo-code for the \ttread\ and \mcas\ operations.
+The pseudo-code includes extensions relevant to memory management (in \emph{italics}), whose discussion is deferred to Section~\ref{sec:mem-mgmt}.
+
+The \ttread\ operation is simply a call to \readInternal\ with a \texttt{self} equal to \texttt{null} as the current operation descriptor (Line~\ref{read-line2}).
+
+The \mcas\ operation takes as argument an \mcasdescriptor\ and returns a boolean indicating success or failure. 
+As mentioned above, the operation proceeds in two stages. 
+In the first stage, \mcas\ attempts to take ownership of (or \textit{acquire}) each target word (Lines~\ref{mcas-first-phase-begin}--\ref{mcas-first-phase-end}).
+To this end, for each \worddescriptor\ $w$ in its \texttt{words} array, we start by calling \readInternal\ on $w$'s target address \texttt{addr} 
+(Line~\ref{mcas-readinternal}; as described above, this handles any helping required in case another active operation owns \texttt{addr}). 
+If \texttt{addr} is already owned by the current \mcas, we move on to the next word (Line~\ref{disregarded}). 
+Otherwise, if the current value at \texttt{addr} does not match the expected value of $w$, 
+the \mcas\ cannot succeed and thus we can skip the next {\worddescriptor}s and go to the second stage (Line~\ref{doomed-end}). 
+If the values do match, we re-check if the operation is still active (line~\ref{status-check}); otherwise we go to the second stage---this prevents a memory location from being re-acquired by the current operation $op$ in case $op$ was already finalized by a helping thread. Finally, we attempt to take ownership of \texttt{addr} through a \cas{} (Line~\ref{mcas-acquire}).
+Note that the failure of this \cas{} might mean that another thread has concurrently helped this \mcas\ to lock the target word.
+Therefore, we simply retry taking ownership on this target word, rather than failing the \mcas\ operation (Line~\ref{mcas-retry}).
+
+In the second stage (Lines \ref{mcas-finalize}--\ref{mcas-finalize-end}), \mcas\ finalizes the descriptor by atomically changing its status from \ttactive\ to \successful\ (if all word acquisitions were successful in stage one) or to \failed\ (otherwise).
+
+%\paragraph*{The \isDescriptor\ function} 
+Our pseudocode assumes the existence of the \isDescriptor\ function, which takes a value and returns \texttt{true} if and only if the value is a pointer to a \worddescriptor.  This function can be implemented, for instance, by designating a low-order \emph{mark bit} in a word to indicate whether it contains a pointer to a descriptor or not~\cite{harris02,wang18}. 
+\begin{camera}
+\end{camera}\begin{arxiv}
+Whenever we make an address point to a descriptor (e.g., Line~\ref{mcas-acquire}) or convert the contents of a word into a pointer to descriptor (e.g., Line~\ref{read-internal-line7}), 
+we also set or unset the mark bit, respectively. 
+In the interest of clarity, we do not show the implementation of \isDescriptor\ or the code for marking/unmarking pointers.
+\end{arxiv}
+
+\begin{camera}
+We give a proof of correctness for our algorithm in the full version of our paper~\cite{longversion}.
+\end{camera}\begin{arxiv}
+We give a proof of correctness for our algorithm in the Appendix.
+\end{arxiv}
+
+\section{Persistent \mcas{} with \texorpdfstring{$k+1$}{k+1} \cas{} and 2 Persistent Fences}\label{sec:persistent-mcas}
+
+We discuss the modifications required to make our volatile \mcas{} algorithm work with persistent memory. 
+\begin{camera}
+In the full version of our paper~\cite{longversion}, we give the complete pseudocode for these modifications.
+\end{camera}\begin{arxiv}
+The extra instructions are shown underlined in Listings~\ref{list:algo-persistent} and \ref{list:readInternal-persistent} in the Appendix.
+\end{arxiv}
+
+In the \texttt{MCAS} function\begin{camera}\end{camera}\begin{arxiv}~(Listing~\ref{list:algo-persistent})\end{arxiv}, after all target locations have been successfully acquired, we add one persistent flush per target word and one persistent fence overall. The persistent fence ensures that all target locations persistently point to their respective {\worddescriptor}s before attempting to modify the status. 
+
+When finalizing the status, we mark the status with a special \texttt{DirtyFlag}. This flag indicates that the status is not yet persistent. We then perform a persistent flush and fence after the status has been finalized. This ensures that the finalized status of the descriptor is persistent before returning from the \mcas{}. Finally, we unset the \texttt{DirtyFlag} with a simple store\begin{camera}\end{camera}\begin{arxiv}~(line~\ref{unset-dirty})\end{arxiv}; this store cannot create a race with the \cas{} that finalizes the status\begin{camera}\end{camera}\begin{arxiv}~(line~\ref{pmcas-finalize})\end{arxiv} because that \cas{} must fail (the status must be already finalized if some thread is already attempting to unset the dirty flag\begin{camera}\end{camera}\begin{arxiv}~(line~\ref{unset-dirty})\end{arxiv}).
+
+We also modify the \texttt{readInternal} function\begin{camera}\end{camera}\begin{arxiv}~(Listing~\ref{list:readInternal-persistent})\end{arxiv} such that, when an operation $op$ encounters another operation $op'$ whose status is finalized but still has the \texttt{DirtyFlag} set, $op$ helps $op'$ persist its status and unsets the \texttt{DirtyFlag} on $op'$ status.
+
+Our modifications enforce the following invariants. First, at the time when a descriptor becomes finalized, its acquisitions of target locations are persistent. Second, at the time when an \mcas{} operation returns, its finalized status is persistent. Third, when a read or \mcas{} operation $op$ returns, all operations on which $op$ depends are finalized and their statuses are persistent. With these invariants, we can argue that our persistent \mcas{} is correct. By correctness we refer to lock-freedom (liveness) and durable linearizability (safety). Lock-freedom is clearly preserved by our additions, thus we focus on durable linearizability. We examine the point in time when a full-system crash may occur during the execution of an \mcas{} operation $op$. There are two possibilities to consider:
+\begin{enumerate}
+    \item If the crash occurs before $op$'s status was finalized and made persistent, then we know that no operation $op'$ which observed the effects of $op$ could have returned before the crash; otherwise, $op'$ would have helped $op$ and persisted its status. In this case, neither $op$ nor any such $op'$ will be linearized before the crash; during recovery, their effects will be rolled back by reverting any acquired locations to their old values.
+    \item If the crash occurs after $op$'s status was finalized and made persistent, then $op$ is linearized before the crash. During recovery, any locations still acquired by $op$ will be detached and given either their new or old values (depending on $op$'s success or failure status), as specified in $op$'s descriptor.
+\end{enumerate}
+
+In sum, the recovery procedure of our algorithm is as follows. The recovery goes through each operation descriptor $D$. If $D$'s status is not finalized, then we roll $D$ back by going through each target location $\ell$ of $D$; if $\ell$ is acquired by $D$ (i.e., points to $D$), then we write into $\ell$ its old value, as specified in $D$. If $D$'s status is finalized, then we detach $D$ and install final values; we go through each target location $\ell$ of $D$; if $\ell$ is acquired by $D$ and $D$ was successful (resp. failed), then we write into $\ell$ the new (resp. old) value as specified in $D$.

@@ -1,0 +1,11 @@
+(test
+ (name test_kcas)
+ (libraries kcas))
+
+(executable
+ (name lin_kcas)
+ (libraries kcas qcheck-lin.domain))
+
+(executable
+ (name stm_kcas)
+ (libraries kcas qcheck-stm.domain qcheck-stm.sequential))

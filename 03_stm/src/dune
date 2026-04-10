@@ -1,0 +1,4 @@
+(library
+ (name stm)
+ (libraries unix)
+ (wrapped false))

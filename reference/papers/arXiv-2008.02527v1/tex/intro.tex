@@ -1,0 +1,100 @@
+%!TEX root = ../main.tex
+
+\section{Introduction}
+\label{sec:intro}
+
+Compare-and-swap (\cas) is a foundational primitive used 
+pervasively in concurrent algorithms on shared
+memory systems. In particular, it is used extensively in \textit{lock-free} algorithms, which 
+avoid the pitfalls of blocking synchronization (e.g., that employs locks) 
+and typically deliver more scalable performance on multicore systems.
+\cas\ conditionally updates a memory word such that a new value is written if 
+and only if the old value in that word matches some expected value.
+\cas\ has been shown to be universal, and thus can implement any shared object in a 
+non-blocking manner~\cite{herlihy93}. This primitive (or the similar load-linked/store-conditional (\llsc)) is nowadays
+provided by nearly every modern architecture.
+%and virtually any practical non-blocking
+%concurrent algorithm in use today is based on it. 
+
+\cas\ does have an inherent limitation: it operates on a single word.
+However, many concurrent algorithms require atomic modification of
+multiple words, thus introducing significant complexity (and
+overheads) to get around the 1-word restriction of
+\cas~\cite{braginsky12,detlefs00,greenwald99,greenwald02,levandoski13,natarajan14}.
+As a way to address the 1-word limitation, the research community suggested a
+natural extension of \cas\ to multiple words---an
+atomic multi-word compare-and-swap (\mcas).  \mcas\ has been
+extensively investigated over the last two
+decades~\cite{anderson95,anderson97,detlefs00,greenwald99,greenwald02,harris02,herlihy93,moir97,shavit95}.
+Arguably, this work partly led to the advent of the enormous wave of
+Transactional Memory (TM) research~\cite{harris10,harris03,herlihy93a}.  In
+fact, MCAS can be considered a special case of TM.
+While \mcas\ is not a silver bullet for concurrent
+programming~\cite{doherty04,herlihy03}, the extensive body of literature
+demonstrates that the task of designing concurrent algorithms becomes
+much easier with \mcas.  
+Not surprisingly, there has been a resurgence
+of interest in \mcas\ in the context of persistent memory, where the persistent
+variant of \mcas\ (\pmcas) serves as a building block for highly
+concurrent data structures, such as skip lists and
+B+-trees~\cite{arulraj18,wang18}, managed in persistent memory.
+
+Existing lock-free \mcas{} constructions typically make heavy use of \cas{} instructions~\cite{anderson95,harris02,moir97}, requiring between $2$ and $4$ \cas{}es per word modified by \mcas{}. That resulting cost is high: \cas{}es may cost up to $3.2\times$ times more cycles than load or store instructions~\cite{DavidGT13}. Naturally, algorithm designers aim to minimize the number of \cas{}es in their \mcas{} implementations. 
+
+% Regarding our lower bound, it might not be obvious why $k$ \cas{}es per $k$-word \mcas{} are necessary. 
+Toward this goal, it may be tempting to try to ``pack'' the information needed to perform the \mcas{} in fewer than $k$ memory words and perform \cas{} only on those words. 
+We show in this paper that this is impossible. While this result might not be surprising, the proof is not trivial, and is done in two steps. First, we show through a bivalency argument that lock-free \mcas{} calls with non-disjoint sets of arguments must perform \cas{} on non-disjoint sets of memory locations, or violate linearizability. Building on this first result, we then show that any lock-free, disjoint-access-parallel $k$-word \mcas{} implementation admits an execution in which some call to \mcas{} must perform \cas{} on at least $k$ different locations. (Our impossibility result focuses on \textit{disjoint-access-parallel} (DAP) algorithms, in which \mcas{} operations on disjoint sets of words do no interfere with each other. DAP is a desirable property of scalable concurrent algorithms~\cite{israeli94}.) 
+
+We also show, however, in the paper that \mcas{} can be ``efficient''. 
+We present the first \mcas{} algorithm that requires $k+1$ \cas{} instructions per call to $k$-\cas{} (in the common uncontended case). Furthermore, our construction has the desirable property that reads do not perform any writes to shared memory (unless they encounter an ongoing \mcas{} operation). This is to be contrasted with existing \mcas{} constructions (in which read operations do not write) that use at least $3k+1$ \cas{}es per $k$-\cas{}. 
+Furthermore, we extend our \mcas{} construction to work with persistent memory (PM). The extension does not change the number of \cas{}es and requires only 2 persistence fences per call (in the common uncontended case), comparing favorably to the prior work that employs $5k+1$ \cas{}es and $2k+1$ fences~\cite{wang18}.
+
+% Moreover, we show our algorithms to be almost optimal with respect to the number of \cas{}es, by proving a lower bound of $k$ \cas{}es per $k$-\cas{}.
+
+
+% Naturally, the following question arises: \emph{What is the minimal number of \cas{} instructions necessary and sufficient to implement a lock-free $k$-word \mcas{}?} Like previous work on lock-free \mcas{}, our focus is on \textit{disjoint-access-parallel} (DAP) algorithms, in which \mcas{} operations on disjoint sets of words do no interfere with each other. DAP is a desirable property of scalable concurrent algorithms~\cite{israeli94}. When refining the above question to DAP algorithms, we show in this paper that the answer is exactly $k$, or $1$ \cas{} per word modified by \mcas{}. We also show that for \pmcas{}, the same number $k$ of \cas{}es is optimal and, in addition, $1$ persistence fence per call is necessary and sufficient. A persistence fence ensures that prior
+% cache line flushes and write-backs, by the same thread, to PM have
+% taken effect; they are expensive since these cache lines must
+% propagate through the entire cache hierarchy to make it to
+% PM~\cite{intel}.
+
+
+ 
+
+%The main idea behind our lower bound is as follows. For any correct lock-free implementation of \mcas{}, linearizability dictates that \mcas{} operations that modify the same words need to contend (through \cas{}es), and disjoint-access-parallelism dictates that \mcas{} calls which \textit{do not} modify the same words should not contend. However, intuitively, an implementation that uses less than $1$ \cas{} per modified word would not have enough ``degrees of freedom'' to satisfy both linearizability and disjoint-access-parallelism; there always exists an execution in which such an implementation violates one of the two properties.
+
+% We prove our upper bound through a series of \mcas{} constructions. 
+
+
+Most previous \mcas{} constructions follow a multi-phase approach to perform a $k$-\cas{} operation $op$.
+In the first (\textit{locking}) phase, $op$ ``locks'' its designated memory locations one by one by replacing the current value in those locations with a pointer to a \textit{descriptor} object. This descriptor contains all the information necessary to complete $op$ by the invoking thread or (potentially) by a helper thread.  In the second (\textit{status-change}) phase, $op$ changes a status flag in the descriptor to indicate successful (or unsuccessful) completion.
+In the third (\textit{unlocking}) phase, $op$ ``unlocks'' those 
+designated memory locations, replacing pointers to its descriptor with new or old values, depending on whether $op$ has succeeded or failed.
+
+% Our algorithm performs a $k$-\cas{} operation $op$ in two phases. 
+% In the first phase (the \textit{locking} phase) $op$ ``locks'' its designated memory locations one by one by replacing (through $k$ \cas{} instructions) the current value in those locations with a pointer to a \textit{descriptor} object. This descriptor contains all the information necessary to complete $op$ by the invoking thread or (potentially) by a helper thread.  In the second phase (the \textit{status-change} phase), we change a status flag in the descriptor (through another \cas{}, bringing the total to $k+1$) to indicate successful (or unsuccessful) completion.
+
+In order to obtain lower complexity, our algorithm makes two crucial observations concerning this unlocking phase. First, this phase can be deferred off the critical path with no impact on correctness. In our algorithm, once an \mcas{} operation completes, its descriptor is left in place until a later time. The unlocking is performed later, either 
+by another \mcas{} operation locking the same memory location (and thus effectively eliminating the cost of unlocking for $op$) or during the memory reclamation of operation descriptors. (We describe a delayed memory reclamation scheme that employs epochs and amortizes the cost of reclamation across multiple operations.)
+
+% Our scheme is similar to epoch-based techniques: it uses per-thread epoch counters to detect when all threads are done working with the descriptor of a completed operation, after which it removes and reclaims that descriptor.
+
+Our second, and perhaps more surprising, observation is that deferring the unlocking phase allows the \textit{locking} phase to be implemented more efficiently. In order to avoid the ABA problem, many existing algorithms require extra complexity in the locking phase. For instance, the well-known Harris et al.~\cite{harris02} algorithm uses the atomic \textit{restricted double-compare single-swap} (\textit{RDCSS}) primitive (that requires at least $2$ \cas{}es per call) to conditionally lock a word, provided that the current operation was not completed by a helping thread. Naively performing the locking phase using \cas{} instead of RDCSS would make the Harris et al.\ algorithm prone to the ABA problem (we provide an example in the full version of our paper~\cite{longversion}). However, in our algorithm, we get ABA prevention ``for free'' by using a memory reclamation mechanism to perform the unlocking phase, because such mechanisms already need to protect against ABA in order to reclaim memory safely. 
+
+Deferring the unlocking phase allows us to come up with an elegant and, arguably, simple \mcas{} construction.  
+Prior work shows, however, that the correctness of an \mcas{} construction should not be taken for granted:
+for instance, Feldman et al.~\cite{feldman15} and Cepeda et al.~\cite{CepedaCLLWG19} describe correctness pitfalls in \mcas{} implementations.
+In this paper, we carefully prove the correctness of our construction. 
+We also evaluate our construction empirically by comparing to a state-of-the-art \mcas{} implementation and showing superior performance through a variety of benchmarks (including a production quality B+-Tree~\cite{arulraj18}) in most considered scenarios.
+
+We note that the delayed unlocking/cleanup introduces a trade-off between higher \mcas{} performance (due to fewer \cas{}es per \mcas{}, which also leads to less slow-down due to less helping) and lower read performance (because of the extra level of indirection reads have to traverse when encountering a descriptor left in place after a completed \mcas{}). One may argue that it also increases the amount of memory consumed by the \mcas{} algorithm. Regarding the former, our evaluation shows that the benefits of the lower complexity overcome the drawbacks of indirection in all workloads that experience \mcas{} contention. Furthermore, we propose a simple optimization to mitigate the impact
+of indirection in reads. As for the latter, we note that much like any lock-free algorithm, the memory consumption of our construction can be tuned by performing memory reclamation more (or less) often. 
+
+The rest of the paper is organized as follows. In Section~\ref{sec:model} we describe our model. In Section~\ref{sec:lowerbound} we present our impossibility result.
+Sections~\ref{sec:algos} and \ref{sec:persistent-mcas} detail our MCAS algorithms for volatile and persistent memory.
+Section~\ref{sec:mem-mgmt} elaborates our lazy memory reclamation scheme. Section~\ref{sec:eval} presents the results of our experimental evaluation. We review related work in Section~\ref{sec:related-work} and conclude in Section~\ref{sec:conclusion}. 
+\begin{camera}
+Due to space limitations, some content (proofs, additional performance results etc.) has been omitted and appears in the full version of this paper~\cite{longversion}.
+\end{camera}\begin{arxiv}
+Some content has been moved to the optional appendices: Appendix~\ref{sec:aba-harris} provides the ABA example for the naive simplification of the Harris et al.\ algorithm; Appendix~\ref{sec:appendix-correctness} proves the correctness of our volatile algorithm; Appendix~\ref{app:persistent-mcas} presents the persistent version of our algorithm; Appendices~\ref{sec:mem-mgt-app} through Appendix~\ref{sec:reads} provide additional details regarding our memory management scheme for volatile and persistent memory and regarding an optimization to improve read performance; Appendix~\ref{sec:extra-evaluation} contains additional performance graphs and Appendix~\ref{sec:related-non-blocking-mcas} gives additional details regarding related work on non-blocking \mcas{}.
+\end{arxiv}
