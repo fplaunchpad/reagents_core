@@ -15,12 +15,12 @@ type awaiter = unit -> unit
 type 'a state = {
   before : 'a;
   after : 'a;
-  casn : casn;
+  mcas_desc : mcas_desc;
 }
-and cass = CASS : 'a loc * 'a state -> cass
-and casn = status Atomic.t
+and word_desc = Word_desc : 'a loc * 'a state -> word_desc
+and mcas_desc = status Atomic.t
 and status =
-  | Undetermined of cass list
+  | Undetermined of word_desc list
   | After
   | Before
 
@@ -38,51 +38,51 @@ type op =
    GKMZ Algorithm (operates on loc.state)
    ────────────────────────────────────────────────────────────────────────── *)
 
-let is_cmp casn state = state.casn != casn
+let is_cmp mcas_desc state = state.mcas_desc != mcas_desc
 
-let finish casn desired =
-  match Atomic.get casn with
+let finish mcas_desc desired =
+  match Atomic.get mcas_desc with
   | After -> true
   | Before -> false
-  | Undetermined cass as current ->
+  | Undetermined word_desc as current ->
     let desired =
       if desired == After
-         && List.exists (fun (CASS (loc, state)) ->
-              is_cmp casn state && Atomic.get loc.state != state) cass
+         && List.exists (fun (Word_desc (loc, state)) ->
+              is_cmp mcas_desc state && Atomic.get loc.state != state) word_desc
       then Before
       else desired
     in
-    Atomic.compare_and_set casn current desired |> ignore;
-    Atomic.get casn == After
+    Atomic.compare_and_set mcas_desc current desired |> ignore;
+    Atomic.get mcas_desc == After
 
-let rec gkmz casn = function
-  | [] -> finish casn After
-  | (CASS (loc, desired) :: continue) as retry ->
+let rec gkmz mcas_desc = function
+  | [] -> finish mcas_desc After
+  | (Word_desc (loc, desired) :: continue) as retry ->
     let current = Atomic.get loc.state in
     if desired == current then
-      gkmz casn continue
-    else if is_cmp casn desired then
-      finish casn Before
+      gkmz mcas_desc continue
+    else if is_cmp mcas_desc desired then
+      finish mcas_desc Before
     else
       let current_value =
-        if is_after current.casn then current.after
+        if is_after current.mcas_desc then current.after
         else current.before
       in
       if current_value != desired.before then
-        finish casn Before
+        finish mcas_desc Before
       else
-        match Atomic.get casn with
+        match Atomic.get mcas_desc with
         | Undetermined _ ->
           if Atomic.compare_and_set loc.state current desired then
-            gkmz casn continue
+            gkmz mcas_desc continue
           else
-            gkmz casn retry
+            gkmz mcas_desc retry
         | After -> true
         | Before -> false
 
-and is_after casn =
-  match Atomic.get casn with
-  | Undetermined cass -> gkmz casn cass
+and is_after mcas_desc =
+  match Atomic.get mcas_desc with
+  | Undetermined word_desc -> gkmz mcas_desc word_desc
   | After -> true
   | Before -> false
 
@@ -125,30 +125,30 @@ let remove_awaiter (loc : 'a loc) (f : awaiter) : unit =
    ────────────────────────────────────────────────────────────────────────── *)
 
 let make (v : 'a) : 'a loc =
-  let casn = Atomic.make After in
-  { state = Atomic.make { before = v; after = v; casn };
+  let mcas_desc = Atomic.make After in
+  { state = Atomic.make { before = v; after = v; mcas_desc };
     awaiters = Atomic.make [] }
 
 let get (loc : 'a loc) : 'a =
   let s = Atomic.get loc.state in
-  if is_after s.casn then s.after
+  if is_after s.mcas_desc then s.after
   else s.before
 
 let atomically (ops : op list) : bool =
-  let casn = Atomic.make After in
-  let cass =
+  let mcas_desc = Atomic.make After in
+  let word_desc =
     ops
     |> List.map (function
-      | CAS (loc, before, after) -> CASS (loc, { before; after; casn })
+      | CAS (loc, before, after) -> Word_desc (loc, { before; after; mcas_desc })
       | CMP (loc, expected) ->
         let current = Atomic.get loc.state in
         if get loc != expected || Atomic.get loc.state != current then
           raise Exit
         else
-          CASS (loc, current))
+          Word_desc (loc, current))
   in
-  Atomic.set casn (Undetermined cass);
-  let result = gkmz casn cass in
+  Atomic.set mcas_desc (Undetermined word_desc);
+  let result = gkmz mcas_desc word_desc in
   if result then fire_awaiters_for_ops ops;
   result
 
