@@ -5,14 +5,22 @@
     Lin (which needs non-blocking operations). We test the Xt/Reagent
     layer that coexists with channels. *)
 
+module Treiber_stack = struct
+  type 'a t = 'a list Reagent.ref
+  let create () = Reagent.ref []
+  let push s = Reagent.upd s (fun xs x -> Some (x :: xs, ()))
+  let try_pop s = Reagent.upd s (fun xs () ->
+    match xs with [] -> None | x :: xs' -> Some (xs', x))
+end
+
 module Sig = struct
   type t = {
-    s : int Reagent.Treiber_stack.stack;
+    s : int Treiber_stack.t;
     a : int Kcas.loc;
   }
 
   let init () = {
-    s = Reagent.Treiber_stack.create ();
+    s = Treiber_stack.create ();
     a = Kcas.make 0;
   }
   let cleanup _ = ()
@@ -22,11 +30,11 @@ module Sig = struct
   let api =
     [
       val_ "push"
-        (fun t v -> Reagent.run (Reagent.Treiber_stack.push t.s) v)
+        (fun t v -> Reagent.run (Treiber_stack.push t.s) v)
         (t @-> int @-> returning unit);
 
       val_ "try_pop"
-        (fun t -> Reagent.run_opt (Reagent.Treiber_stack.try_pop t.s) ())
+        (fun t -> Reagent.run_opt (Treiber_stack.try_pop t.s) ())
         (t @-> returning (option int));
 
       val_ "get_a"

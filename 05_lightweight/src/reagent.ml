@@ -54,14 +54,3 @@ let run_opt r a =
   match Xt.commit (fun ~xt ->
     Xt.or_else (fun ~xt -> Some (r a xt)) (fun ~xt -> ignore xt; None) ~xt)
   with v -> v
-
-(* ── Data structures ────────────────────────────────────────────────────── *)
-
-module Treiber_stack = struct
-  type 'a stack = 'a list ref
-
-  let create () = ref []
-  let push s = upd s (fun xs x -> Some (x :: xs, ()))
-  let try_pop s = upd s (fun xs () ->
-    match xs with [] -> None | x :: xs' -> Some (xs', x))
-end

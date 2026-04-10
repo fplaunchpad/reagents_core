@@ -21,10 +21,3 @@ val pair : ('a, 'c) t -> ('b, 'd) t -> ('a * 'b, 'c * 'd) t
 
 val run : ('a, 'b) t -> 'a -> 'b
 val run_opt : ('a, 'b) t -> 'a -> 'b option
-
-module Treiber_stack : sig
-  type 'a stack
-  val create : unit -> 'a stack
-  val push : 'a stack -> ('a, unit) t
-  val try_pop : 'a stack -> (unit, 'a) t
-end

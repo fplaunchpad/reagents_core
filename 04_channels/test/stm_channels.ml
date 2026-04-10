@@ -1,5 +1,13 @@
 (** QCheck-STM model-based test for Treiber stack at the channels layer. *)
 
+module Treiber_stack = struct
+  type 'a t = 'a list Reagent.ref
+  let create () = Reagent.ref []
+  let push s = Reagent.upd s (fun xs x -> Some (x :: xs, ()))
+  let try_pop s = Reagent.upd s (fun xs () ->
+    match xs with [] -> None | x :: xs' -> Some (xs', x))
+end
+
 open QCheck
 open STM
 
@@ -11,7 +19,7 @@ let show_cmd = function
 
 module Spec = struct
   type nonrec cmd = cmd
-  type sut = int Reagent.Treiber_stack.stack
+  type sut = int Treiber_stack.t
   type state = int list
 
   let show_cmd = show_cmd
@@ -24,7 +32,7 @@ module Spec = struct
       ])
 
   let init_state = []
-  let init_sut () = Reagent.Treiber_stack.create ()
+  let init_sut () = Treiber_stack.create ()
   let cleanup _ = ()
 
   let next_state cmd s = match cmd with
@@ -35,10 +43,10 @@ module Spec = struct
 
   let run cmd sut = match cmd with
     | Push i ->
-      Reagent.run (Reagent.Treiber_stack.push sut) i;
+      Reagent.run (Treiber_stack.push sut) i;
       Res (unit, ())
     | Try_pop ->
-      Res (option int, Reagent.run_opt (Reagent.Treiber_stack.try_pop sut) ())
+      Res (option int, Reagent.run_opt (Treiber_stack.try_pop sut) ())
 
   let postcond cmd (state : state) res =
     match cmd with

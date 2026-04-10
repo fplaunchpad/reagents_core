@@ -352,29 +352,37 @@ let test_concurrent_queue () =
 
 (* Reagent-style examples using the Reagent wrapper *)
 
+module Treiber_stack = struct
+  type 'a t = 'a list Reagent.ref [@@warning "-34"]
+  let create () = Reagent.ref []
+  let push s = Reagent.upd s (fun xs x -> Some (x :: xs, ()))
+  let try_pop s = Reagent.upd s (fun xs () ->
+    match xs with [] -> None | x :: xs' -> Some (xs', x))
+end
+
 let test_reagent_treiber_stack () =
-  let s = Reagent.Treiber_stack.create () in
-  Reagent.run (Reagent.Treiber_stack.push s) 10;
-  Reagent.run (Reagent.Treiber_stack.push s) 20;
-  Reagent.run (Reagent.Treiber_stack.push s) 30;
-  assert_eq "pop" 30 (Reagent.run (Reagent.Treiber_stack.try_pop s) ())
+  let s = Treiber_stack.create () in
+  Reagent.run (Treiber_stack.push s) 10;
+  Reagent.run (Treiber_stack.push s) 20;
+  Reagent.run (Treiber_stack.push s) 30;
+  assert_eq "pop" 30 (Reagent.run (Treiber_stack.try_pop s) ())
 
 let test_reagent_transfer () =
-  let s1 = Reagent.Treiber_stack.create () in
-  let s2 = Reagent.Treiber_stack.create () in
-  Reagent.run (Reagent.Treiber_stack.push s1) 42;
+  let s1 = Treiber_stack.create () in
+  let s2 = Treiber_stack.create () in
+  Reagent.run (Treiber_stack.push s1) 42;
   (* Atomic pop-and-push via >> *)
   Reagent.run
     Reagent.(Treiber_stack.try_pop s1 >> Treiber_stack.push s2) ();
-  assert_eq "s2" 42 (Reagent.run (Reagent.Treiber_stack.try_pop s2) ())
+  assert_eq "s2" 42 (Reagent.run (Treiber_stack.try_pop s2) ())
 
 let test_reagent_choice () =
   (* Pop from s1; if empty, pop from s2 (thesis elimination stack pattern) *)
-  let s1 = Reagent.Treiber_stack.create () in
-  let s2 = Reagent.Treiber_stack.create () in
-  Reagent.run (Reagent.Treiber_stack.push s2) 99;
+  let s1 = Treiber_stack.create () in
+  let s2 = Treiber_stack.create () in
+  Reagent.run (Treiber_stack.push s2) 99;
   let pop_either =
-    Reagent.(Reagent.(+) (Treiber_stack.try_pop s1) (Treiber_stack.try_pop s2))
+    Reagent.(+) (Treiber_stack.try_pop s1) (Treiber_stack.try_pop s2)
   in
   assert_eq "choice pops from s2" 99 (Reagent.run pop_either ())
 

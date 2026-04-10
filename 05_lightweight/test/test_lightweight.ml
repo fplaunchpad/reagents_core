@@ -74,21 +74,29 @@ let test_xt_retry_with_fibers () =
 
 (* ── Treiber stack with fibers ──────────────────────────────────────────── *)
 
+module Treiber_stack = struct
+  type 'a t = 'a list Reagent.ref [@@warning "-34"]
+  let create () = Reagent.ref []
+  let push s = Reagent.upd s (fun xs x -> Some (x :: xs, ()))
+  let try_pop s = Reagent.upd s (fun xs () ->
+    match xs with [] -> None | x :: xs' -> Some (xs', x))
+end
+
 let test_stack_with_fibers () =
   let results = ref [] in
   Sched.run (fun () ->
-    let s = Reagent.Treiber_stack.create () in
+    let s = Treiber_stack.create () in
     (* Producer fiber *)
     Sched.fork (fun () ->
       for i = 1 to 5 do
-        Reagent.run (Reagent.Treiber_stack.push s) i;
+        Reagent.run (Treiber_stack.push s) i;
         Sched.yield ()
       done);
     (* Consumer fiber *)
     Sched.fork (fun () ->
       for _ = 1 to 5 do
         Sched.yield ();
-        (match Reagent.run_opt (Reagent.Treiber_stack.try_pop s) () with
+        (match Reagent.run_opt (Treiber_stack.try_pop s) () with
          | Some v -> results := v :: !results
          | None -> ())
       done));
@@ -153,11 +161,11 @@ let test_counter_blocking_fiber () =
 let test_fiber_stack_transfer () =
   let transferred = ref 0 in
   Sched.run (fun () ->
-    let s1 = Reagent.Treiber_stack.create () in
-    let s2 = Reagent.Treiber_stack.create () in
+    let s1 = Treiber_stack.create () in
+    let s2 = Treiber_stack.create () in
     (* Push items to s1 *)
     for i = 1 to 5 do
-      Reagent.run (Reagent.Treiber_stack.push s1) i
+      Reagent.run (Treiber_stack.push s1) i
     done;
     (* Fiber: transfer all from s1 to s2 *)
     Sched.fork (fun () ->
@@ -170,7 +178,7 @@ let test_fiber_stack_transfer () =
     (* Count items in s2 *)
     let c = ref 0 in
     for _ = 1 to 5 do
-      match Reagent.run_opt (Reagent.Treiber_stack.try_pop s2) () with
+      match Reagent.run_opt (Treiber_stack.try_pop s2) () with
       | Some _ -> incr c
       | None -> ()
     done;
