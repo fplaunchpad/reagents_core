@@ -52,10 +52,10 @@ and 'a state = {
   mcas_desc : mcas_desc;
 }
 
-(** An existentially-typed word descriptor paired with its target location.
+(** A word descriptor: a target location and the state to install there.
 
-    The existential hides the value type ['a], allowing a heterogeneous list of
-    word descriptors (different locations may hold different types). *)
+    Existentially quantifies ['a] so that a single list of [word_desc]s can
+    reference locations of different types. *)
 and word_desc = Word_desc : 'a loc * 'a state -> word_desc
 
 (** Operation descriptor — an atomic cell holding the operation's status.
