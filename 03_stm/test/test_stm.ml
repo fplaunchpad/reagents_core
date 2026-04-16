@@ -356,8 +356,12 @@ module Treiber_stack = struct
   type 'a t = 'a list Reagent.ref [@@warning "-34"]
   let create () = Reagent.ref []
   let push s = Reagent.upd s (fun xs x -> Some (x :: xs, ()))
-  let try_pop s = Reagent.upd s (fun xs () ->
+  (* Blocking pop: retries when empty *)
+  let pop s = Reagent.upd s (fun xs () ->
     match xs with [] -> None | x :: xs' -> Some (xs', x))
+  (* Non-blocking pop: returns option *)
+  let try_pop s = Reagent.upd s (fun xs () ->
+    match xs with [] -> Some ([], None) | x :: xs' -> Some (xs', Some x))
 end
 
 let test_reagent_treiber_stack () =
@@ -365,7 +369,7 @@ let test_reagent_treiber_stack () =
   Reagent.run (Treiber_stack.push s) 10;
   Reagent.run (Treiber_stack.push s) 20;
   Reagent.run (Treiber_stack.push s) 30;
-  assert_eq "pop" 30 (Reagent.run (Treiber_stack.try_pop s) ())
+  assert_eq "pop" 30 (Reagent.run (Treiber_stack.pop s) ())
 
 let test_reagent_transfer () =
   let s1 = Treiber_stack.create () in
@@ -373,8 +377,8 @@ let test_reagent_transfer () =
   Reagent.run (Treiber_stack.push s1) 42;
   (* Atomic pop-and-push via >> *)
   Reagent.run
-    Reagent.(Treiber_stack.try_pop s1 >> Treiber_stack.push s2) ();
-  assert_eq "s2" 42 (Reagent.run (Treiber_stack.try_pop s2) ())
+    Reagent.(Treiber_stack.pop s1 >> Treiber_stack.push s2) ();
+  assert_eq "s2" 42 (Reagent.run (Treiber_stack.pop s2) ())
 
 let test_reagent_choice () =
   (* Pop from s1; if empty, pop from s2 (thesis elimination stack pattern) *)
@@ -382,9 +386,107 @@ let test_reagent_choice () =
   let s2 = Treiber_stack.create () in
   Reagent.run (Treiber_stack.push s2) 99;
   let pop_either =
-    Reagent.(+) (Treiber_stack.try_pop s1) (Treiber_stack.try_pop s2)
+    Reagent.(+) (Treiber_stack.pop s1) (Treiber_stack.pop s2)
   in
   assert_eq "choice pops from s2" 99 (Reagent.run pop_either ())
+
+(* LIFO ordering: push 1,2,3 → pop 3,2,1 *)
+let test_reagent_lifo () =
+  let s = Treiber_stack.create () in
+  List.iter (Reagent.run (Treiber_stack.push s)) [1; 2; 3];
+  assert_eq "lifo 1" 3 (Reagent.run (Treiber_stack.pop s) ());
+  assert_eq "lifo 2" 2 (Reagent.run (Treiber_stack.pop s) ());
+  assert_eq "lifo 3" 1 (Reagent.run (Treiber_stack.pop s) ())
+
+(* Non-blocking try_pop: returns None on empty, Some on non-empty *)
+let test_reagent_try_pop () =
+  let s = Treiber_stack.create () in
+  let r = Reagent.run (Treiber_stack.try_pop s) () in
+  assert_eq "try_pop empty" 1 (if r = None then 1 else 0);
+  Reagent.run (Treiber_stack.push s) 42;
+  let r = Reagent.run (Treiber_stack.try_pop s) () in
+  assert_eq "try_pop got" 42 (match r with Some v -> v | None -> -1)
+
+(* run_opt: returns None when the reagent retries *)
+let test_reagent_run_opt () =
+  let s = Treiber_stack.create () in
+  let r = Reagent.run_opt (Treiber_stack.pop s) () in
+  assert_eq "run_opt empty" 1 (if r = None then 1 else 0);
+  Reagent.run (Treiber_stack.push s) 7;
+  let r = Reagent.run_opt (Treiber_stack.pop s) () in
+  assert_eq "run_opt got" 7 (match r with Some v -> v | None -> -1)
+
+(* Blocking pop: one domain pops from empty stack, another pushes *)
+let test_reagent_blocking_pop () =
+  let s = Treiber_stack.create () in
+  let d = Domain.spawn (fun () ->
+    Reagent.run (Treiber_stack.pop s) ()) in
+  Unix.sleepf 0.01;
+  Reagent.run (Treiber_stack.push s) 99;
+  assert_eq "blocking pop" 99 (Domain.join d)
+
+(* Lift: pop and transform the result *)
+let test_reagent_lift () =
+  let s = Treiber_stack.create () in
+  Reagent.run (Treiber_stack.push s) 5;
+  let pop_doubled = Reagent.(Treiber_stack.pop s >> lift (fun x -> x * 2)) in
+  assert_eq "lift" 10 (Reagent.run pop_doubled ())
+
+(* Pair: push to two stacks atomically *)
+let test_reagent_pair () =
+  let s1 = Treiber_stack.create () in
+  let s2 = Treiber_stack.create () in
+  let push_both = Reagent.pair (Treiber_stack.push s1) (Treiber_stack.push s2) in
+  Reagent.run push_both (10, 20) |> ignore;
+  assert_eq "pair s1" 10 (Reagent.run (Treiber_stack.pop s1) ());
+  assert_eq "pair s2" 20 (Reagent.run (Treiber_stack.pop s2) ())
+
+(* Constant: ignore pop result and produce a fixed value *)
+let test_reagent_constant () =
+  let s = Treiber_stack.create () in
+  Reagent.run (Treiber_stack.push s) 42;
+  let pop_then_zero = Reagent.(Treiber_stack.pop s >> constant 0) in
+  assert_eq "constant" 0 (Reagent.run pop_then_zero ());
+  (* Stack should be empty after pop *)
+  assert_eq "popped" 1
+    (if Reagent.run (Treiber_stack.try_pop s) () = None then 1 else 0)
+
+(* Concurrent push/pop: multiple domains push and pop, total count preserved *)
+let test_reagent_concurrent () =
+  let s = Treiber_stack.create () in
+  let n = 1_000 in
+  (* 4 domains each push n items *)
+  let pushers = List.init 4 (fun id ->
+    Domain.spawn (fun () ->
+      for i = 0 to n - 1 do
+        Reagent.run (Treiber_stack.push s) (id * n + i)
+      done)) in
+  List.iter Domain.join pushers;
+  (* Pop everything and count *)
+  let count = Stdlib.ref 0 in
+  let go = Stdlib.ref true in
+  while !go do
+    match Reagent.run (Treiber_stack.try_pop s) () with
+    | Some _ -> incr count
+    | None -> go := false
+  done;
+  assert_eq "concurrent count" (4 * n) !count
+
+(* Atomic transfer chain: s1 → s2 → s3 via >> *)
+let test_reagent_transfer_chain () =
+  let s1 = Treiber_stack.create () in
+  let s2 = Treiber_stack.create () in
+  let s3 = Treiber_stack.create () in
+  Reagent.run (Treiber_stack.push s1) 77;
+  (* s1 → s2 *)
+  Reagent.run Reagent.(Treiber_stack.pop s1 >> Treiber_stack.push s2) ();
+  (* s2 → s3 *)
+  Reagent.run Reagent.(Treiber_stack.pop s2 >> Treiber_stack.push s3) ();
+  assert_eq "chain s3" 77 (Reagent.run (Treiber_stack.pop s3) ());
+  assert_eq "chain s1 empty" 1
+    (if Reagent.run (Treiber_stack.try_pop s1) () = None then 1 else 0);
+  assert_eq "chain s2 empty" 1
+    (if Reagent.run (Treiber_stack.try_pop s2) () = None then 1 else 0)
 
 (* ── Run ────────────────────────────────────────────────────────────────── *)
 
@@ -428,5 +530,14 @@ let () =
   List.iter (fun (n,f) -> run_test n f)
     ["reagent_treiber_stack", test_reagent_treiber_stack;
      "reagent_transfer", test_reagent_transfer;
-     "reagent_choice", test_reagent_choice];
+     "reagent_choice", test_reagent_choice;
+     "reagent_lifo", test_reagent_lifo;
+     "reagent_try_pop", test_reagent_try_pop;
+     "reagent_run_opt", test_reagent_run_opt;
+     "reagent_blocking_pop", test_reagent_blocking_pop;
+     "reagent_lift", test_reagent_lift;
+     "reagent_pair", test_reagent_pair;
+     "reagent_constant", test_reagent_constant;
+     "reagent_concurrent", test_reagent_concurrent;
+     "reagent_transfer_chain", test_reagent_transfer_chain];
   Printf.printf "\nAll tests passed.\n%!"
