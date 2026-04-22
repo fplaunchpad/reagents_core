@@ -1,9 +1,4 @@
-(** Cooperative round-robin scheduler with Trigger support.
-
-    Runs fibers (lightweight threads) cooperatively on a single domain.
-    Handles [Fork], [Yield], and [Trigger.Await] effects.
-
-    From cs6868 lecture 10: lightweight concurrency. *)
+(** Cooperative round-robin scheduler with Trigger support. *)
 
 open Effect
 open Effect.Deep
@@ -37,7 +32,6 @@ let run main =
       if Trigger.on_signal trigger (fun () -> enqueue k) then
         dequeue ()
       else
-        (* Already signaled — resume immediately *)
         continue k ()
   in
   spawn main

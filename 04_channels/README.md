@@ -1,62 +1,69 @@
-# 04: Swap Channels
+# 04: Composable Swap Channels
 
-Extends [03_stm](../03_stm/) with **synchronous swap channels** — a rendezvous
-primitive where two domains exchange values.
+Adds **swap channels** (synchronous rendezvous) that compose with other
+reagent operations. This is the full reagents abstraction from the original
+paper.
 
-## What is a swap channel?
+## The key upgrade: CPS reagents
 
-A channel connects two endpoints. When domain A calls `swap` on one endpoint
-and domain B calls `swap` on the dual endpoint, they exchange values
-atomically: A sends `x` and receives `y`, B sends `y` and receives `x`.
+[03_stm](../03_stm/)'s reagent was a simple function:
+```ocaml
+type ('a, 'b) t = 'a -> Xt.t -> 'b
+```
+
+This can't express composable channel swap. Why? When `swap ep >> k` runs,
+swap needs to post its *continuation* (`k`) to the channel. A matching
+partner then runs `k` with the partner's payload before committing the
+combined transaction. The simple function type has no way to expose `k`.
+
+So in 04 we switch to a CPS (continuation-passing) record:
+```ocaml
+type ('a, 'b) t = {
+  try_react : 'a -> Xt.t -> 'b result;
+  seq : 'c. ('b, 'c) t -> ('a, 'c) t;
+}
+```
+
+The `seq` field is the explicit continuation mechanism. `r1 >> r2 = r1.seq r2`.
+
+## Composable swap
 
 ```ocaml
-let ep1, ep2 = Channel.mk_chan () in
+(* Atomically receive from channel and push onto stack: *)
+let recv_and_push ep stack =
+  Reagent.(Channel.swap ep >> Treiber_stack.push stack)
 
-(* Domain 1 *)
-let got = Channel.swap ep1 42    (* sends 42, receives 99 *)
-
-(* Domain 2 *)
-let got = Channel.swap ep2 99    (* sends 99, receives 42 *)
+Reagent.run (recv_and_push ep s) 0
 ```
 
-## How it works
+When one side finds no partner, it blocks. When a partner arrives, the two
+transactions (each side's pre-swap and post-swap ops) commit atomically
+as a single k-CAS — with offer fulfillment scheduled as a post-commit
+action so the result is delivered only if the whole thing succeeds.
 
-Each endpoint has an outgoing and incoming message queue. `swap`:
+## Implementation sketch
 
-1. Checks the incoming queue for a waiting partner
-2. If found: fulfill the partner's offer with our value, return their payload
-3. If not: post our offer on the outgoing queue, block until a partner arrives
-
-Blocking uses `Mutex`/`Condition` — domain-safe, no effect handlers needed.
-
-### Offers
-
-An offer represents a blocked domain waiting for a partner:
-
-```
-Pending ──fulfill(v)──> Fulfilled(v)   (partner delivers value, signals Condition)
-```
-
-Fulfilled offers are cleaned from queues by `clean`.
-
-## Limitation
-
-`swap` is a standalone blocking operation — it is **not composable** within an
-`Xt` transaction. You cannot atomically combine a channel swap with a CAS
-(e.g., `swap ep >> push stack`). That would require the CPS reagent structure
-from the original reagents paper.
-
-You can use channels and Xt transactions in the same program, just not in the
-same atomic operation.
+1. Thread A runs `swap ep >> k`. At the swap, A has accumulated Xt ops.
+2. Looking in the incoming queue: no partner. A posts
+   `Message(payload, k, offer)` to the outgoing queue and blocks on `offer`.
+3. Thread B runs `swap dual_ep`. It finds A's message.
+4. B builds: `merged = partner_k >> swap_k partner_payload partner_offer >> k_B`
+5. B runs `merged` with B's payload:
+   - Runs A's `k` with B's payload → A's final result `r_A`
+   - Schedules `fulfill(partner_offer, r_A)` as post-commit action
+   - Continues with B's own continuation
+6. B commits atomically (Xt ops from both sides + post-commit fulfillment).
+7. A wakes up with `r_A`.
 
 ## Tests
 
-9 tests:
-- Basic swap, symmetric exchange, sequential swaps
-- Concurrent: many domains swapping, ping-pong
-- Xt integration: swap then transactional update
-- Thesis examples: send/recv, producer-consumer
+- Basic swap between two domains
+- Multiple sequential swaps
+- Composable swap: `swap >> push stack`, `swap >> store ref`
+- Ping-pong between two domains
 
-```sh
-dune test
-```
+## Limitations
+
+`swap + alternative` (choice where swap falls through if no partner) requires
+a two-phase protocol (try without offer first, post offer only if all
+alternatives block). Not implemented in this minimal version.

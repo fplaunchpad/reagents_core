@@ -57,3 +57,8 @@ val or_else : (xt:t -> 'a) -> (xt:t -> 'a) -> xt:t -> 'a
 
 val commit : (xt:t -> 'a) -> 'a
 (** Run a transaction and commit atomically. Retries on failure. *)
+
+val add_post_commit : xt:t -> (unit -> unit) -> unit
+(** [add_post_commit ~xt f] schedules [f ()] to run after the transaction
+    successfully commits. If the transaction retries or or_else rolls back,
+    [f] is discarded. Used by channels to deliver swapped values atomically. *)

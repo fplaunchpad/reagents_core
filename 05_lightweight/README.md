@@ -1,86 +1,59 @@
 # 05: Lightweight Threads
 
-Extends [04_channels](../04_channels/) by replacing `Mutex`/`Condition` blocking
-with **fiber-level suspension** via OCaml 5 effect handlers. Adds two modules:
+Extends [04_channels](../04_channels/) by replacing `Mutex`/`Condition`
+blocking with **fiber-level suspension** via OCaml 5 effect handlers.
+Adds two modules:
 
 - **Trigger**: a one-shot signaling primitive
 - **Sched**: a cooperative round-robin scheduler
 
+Everything else (the CPS reagent, Xt, composable channels) is identical
+to 04 — only the blocking mechanism changes.
+
 ## Why lightweight threads?
 
-In 04_channels, `swap` blocks an OS thread (domain) with `Mutex.lock` /
-`Condition.wait`. This is fine for a few domains, but doesn't scale to
-thousands of concurrent tasks.
+In 04, `Channel.swap` and `Xt.retry` block the OS thread via
+`Mutex.lock` / `Condition.wait`. This is fine for a few domains, but
+doesn't scale to thousands of concurrent tasks.
 
-With lightweight threads (fibers), blocking suspends just the current fiber and
-switches to the next one — no OS thread is wasted. A single domain can run
+With fibers, blocking suspends just the current fiber and switches to
+the next runnable one — no OS thread is wasted. A single domain can run
 thousands of fibers cooperatively.
 
-## Trigger
+## What changed from 04
 
-A one-shot signaling primitive with three states:
+| File | Change |
+|------|--------|
+| `trigger.ml`, `sched.ml` | New: one-shot signaling + cooperative scheduler |
+| `channel.ml` | Offers use `Trigger` instead of Mutex/Condition. No endpoint lock (cooperative scheduling serializes queue access). |
+| `xt.ml` | `block_on_log` uses `Trigger.await` instead of Mutex/Condition |
+| `kcas.ml`, `reagent.ml` | unchanged |
 
-```
-Initial ──signal──> Signaled
-   │
-on_signal(cb)
-   │
-   v
-Waiting(cb) ──signal──> Signaled (callback invoked)
-```
-
-- `Trigger.create ()` — new trigger in Initial state
-- `Trigger.signal t` — transition to Signaled, invoke callback if registered
-- `Trigger.on_signal t cb` — register callback (Initial → Waiting)
-- `Trigger.await t` — perform the `Await` effect (handled by Sched)
-
-## Sched
-
-A cooperative round-robin scheduler handling three effects:
-
-```ocaml
-Sched.run (fun () ->
-  Sched.fork (fun () -> ...);   (* spawn a fiber *)
-  Sched.yield ();                (* yield to next fiber *)
-  Trigger.await trigger)         (* suspend until signaled *)
-```
-
-The scheduler's effect handler for `Trigger.Await`:
-1. Register the continuation as a callback via `Trigger.on_signal`
-2. Switch to the next runnable fiber via `dequeue`
-3. When `signal` fires, the callback re-enqueues the continuation
-
-## What changed from 04_channels
-
-- `Channel.swap` uses `Trigger.await` instead of `Condition.wait`
-- `Xt.commit`'s retry path uses `Trigger.await` instead of `Condition.wait`
-- Channel queues no longer need a `Mutex` (single-domain cooperative scheduling)
-
-## Example: fibers with channels
+## Example
 
 ```ocaml
 Sched.run (fun () ->
   let ep1, ep2 = Channel.mk_chan () in
+  let s = Stack.create () in
 
+  (* Fiber A: swap, then push received value onto stack *)
   Sched.fork (fun () ->
-    let v = Channel.swap ep1 42 in
-    Printf.printf "fiber 1 got %d\n" v);
+    let composed = Reagent.(Channel.swap ep1 >> Stack.push s) in
+    Reagent.run composed 100);
 
-  let v = Channel.swap ep2 99 in
-  Printf.printf "fiber 2 got %d\n" v)
+  (* Fiber B: just swap *)
+  let _ = Reagent.run (Channel.swap ep2) 42 in
+  ...)
 ```
+
+Fiber A's swap-and-push runs atomically: either the swap completes and
+the value gets pushed, or nothing happens.
 
 ## Testing
 
-Fiber-level interleaving is cooperative (single domain), so **QCheck-Lin/STM
-do not apply** — they require domain-level parallelism. Instead, tests use
-deterministic scenarios within `Sched.run`.
-
-9 tests:
-- Channel swap with fibers: basic, chain (A→B→C), many fibers, ping-pong
-- Xt retry with fibers: blocking decrement woken by another fiber
-- Treiber stack with fibers: producer-consumer
-- Thesis examples: producer-consumer, blocking counter, stack transfer
+Fiber-level interleaving is cooperative (single domain), so
+**QCheck-Lin/STM do not apply** — they require domain-level parallelism.
+Tests use deterministic scenarios within `Sched.run`.
 
 ```sh
 dune test
@@ -88,5 +61,5 @@ dune test
 
 ## Reference
 
-The Trigger and Sched modules are from CS6868 (Concurrent Programming, IIT Madras)
-lecture 10 on lightweight concurrency.
+The Trigger and Sched modules are from CS6868 (Concurrent Programming,
+IIT Madras) lecture 10 on lightweight concurrency.

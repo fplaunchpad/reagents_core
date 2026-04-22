@@ -14,19 +14,19 @@ one. A student reads them in order, with each step adding one concept.
 |-----------|-------------|-----------|
 | [01_kcas](01_kcas/) | GKMZ k-CAS algorithm | `kcas.ml` |
 | [02_kcas_cmp](02_kcas_cmp/) | CMP read-only compare operations | `kcas.ml` |
-| [03_stm](03_stm/) | Xt transaction log, `retry`, `or_else`, Reagent combinator wrapper | `kcas.ml`, `xt.ml`, `reagent.ml` |
-| [04_channels](04_channels/) | Swap channels (Mutex/Condition) | `channel.ml` |
-| [05_lightweight](05_lightweight/) | Fiber scheduler, Trigger (effect handlers) | `trigger.ml`, `sched.ml` |
+| [03_stm](03_stm/) | Xt transaction log, `retry`, `or_else`, simple-function Reagent | `kcas.ml`, `xt.ml`, `reagent.ml` |
+| [04_channels](04_channels/) | CPS Reagent + composable swap channels | `reagent.ml`, `channel.ml` |
+| [05_lightweight](05_lightweight/) | Fiber scheduler + Trigger (replaces Mutex/Condition) | `trigger.ml`, `sched.ml` |
 
 ## Architecture
 
 ```
 +------------------------------+
-|  05: Lightweight threads     |  Trigger + Sched (effect handlers)
+|  05: Lightweight threads     |  Trigger + Sched (replaces Mutex/Condition)
 +------------------------------+
-|  04: Channels                |  swap/rendezvous (Mutex/Condition)
+|  04: Composable channels     |  CPS reagent + swap via rendezvous
 +------------------------------+
-|  03: STM + Reagents          |  Xt transaction log + combinator wrapper
+|  03: STM + simple reagents   |  Xt transaction log + function-based reagent
 +------------------------------+
 |  02: k-CAS + CMP             |  GKMZ + read-only compare
 +------------------------------+

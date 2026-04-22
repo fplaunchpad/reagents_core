@@ -1,83 +1,57 @@
-(** Reagent combinators — a functional wrapper over {!Xt}.
+(** CPS-style reagent combinators with composable swap channels.
 
-    A reagent [('a, 'b) t] is just a function [fun (a : 'a) (xt : Xt.t) -> ... : 'b].
-    Sequencing is function composition. Choice is {!Xt.or_else}. Blocking is
-    {!Xt.retry}.
-
-    {2 Example}
-
-    {[
-      let push s = Reagent.upd s (fun xs x -> Some (x :: xs, ()))
-      let try_pop s = Reagent.upd s (fun xs () ->
-        match xs with [] -> None | x :: xs' -> Some (xs', x))
-
-      (* Atomically pop from s1 and push to s2: *)
-      let transfer s1 s2 = Reagent.(try_pop s1 >> push s2)
-      let () = Reagent.run (transfer s1 s2) ()
-    ]} *)
+    Unlike [03_stm]'s simpler reagent type ['a -> Xt.t -> 'b], this
+    reagent is a record that carries its continuation via the [seq]
+    field. This enables composable channel [swap] — see {!Channel.swap}. *)
 
 (** {1 Types} *)
 
+type 'a result =
+  | Done of 'a       (** Success. *)
+  | Block            (** Permanent failure: precondition not met. *)
+  | Retry            (** Transient failure: retry. *)
+
+type ('a, 'b) t = {
+  try_react : 'a -> Xt.t -> 'b result;
+  seq : 'c. ('b, 'c) t -> ('a, 'c) t;
+}
+(** A reagent from ['a] to ['b].
+
+    [try_react] runs the reagent, accumulating CAS/CMP ops in the [Xt] log.
+    [seq k] composes the reagent with continuation [k] — this is what makes
+    channel swap composable. *)
+
 type 'a ref = 'a Kcas.loc
-(** A mutable shared reference cell, backed by a k-CAS location. *)
 
-type ('a, 'b) t = 'a -> Xt.t -> 'b
-(** A reagent: takes an input of type ['a] and a transaction log, produces ['b].
-    All reads and writes go through the log and are committed atomically. *)
+(** {1 Construction} *)
 
-(** {1 Ref cell operations} *)
+val make_reagent : ('a -> Xt.t -> 'b result) -> ('a, 'b) t
+(** [make_reagent f] builds a reagent from a try function, generating
+    the [seq] field automatically. *)
+
+(** {1 Ref operations} *)
 
 val ref : 'a -> 'a ref
-(** [ref v] creates a new reference cell initialized to [v]. *)
-
 val get : 'a ref -> 'a
-(** [get r] reads the current value of [r] directly (outside a transaction).
-    Not validated at commit time — use {!read} inside a reagent. *)
-
 val read : 'a ref -> (unit, 'a) t
-(** [read r] reads [r] within a transaction (validated at commit via CMP). *)
-
 val upd : 'a ref -> ('a -> 'b -> ('a * 'c) option) -> ('b, 'c) t
-(** [upd r f] is the fundamental update reagent. Reads current value [a] from
-    [r], calls [f a b] where [b] is the input. If [f] returns [Some (a', c)],
-    sets [r] to [a'] and produces [c]. If [None], calls {!Xt.retry}. *)
-
 val cas : 'a ref -> 'a -> 'a -> (unit, unit) t
-(** [cas r expected desired] sets [r] to [desired] if it holds [expected],
-    otherwise retries. *)
-
 val modify : 'a ref -> ('a -> 'a) -> (unit, unit) t
-(** [modify r f] atomically applies [f] to the value in [r]. *)
-
 val set : 'a ref -> 'a -> (unit, unit) t
-(** [set r v] atomically sets [r] to [v]. *)
+val constant : 'b -> ('a, 'b) t
+val lift : ('a -> 'b) -> ('a, 'b) t
 
 (** {1 Combinators} *)
 
 val (>>) : ('a, 'b) t -> ('b, 'c) t -> ('a, 'c) t
-(** [r1 >> r2] sequences two reagents within the same atomic transaction.
-    The output of [r1] becomes the input to [r2]. *)
+(** Sequential composition via [seq]. *)
 
 val (+) : ('a, 'b) t -> ('a, 'b) t -> ('a, 'b) t
-(** [r1 + r2] chooses between two reagents. Tries [r1]; if it retries,
-    rolls back and tries [r2]. Corresponds to {!Xt.or_else}. *)
-
-val constant : 'b -> ('a, 'b) t
-(** [constant v] ignores its input and always produces [v]. *)
-
-val lift : ('a -> 'b) -> ('a, 'b) t
-(** [lift f] applies pure function [f] to the input. No transactional ops. *)
+(** Choice: try first; on Block, try second. *)
 
 val pair : ('a, 'c) t -> ('b, 'd) t -> ('a * 'b, 'c * 'd) t
-(** [pair r1 r2] runs both reagents on a pair input, producing a pair output. *)
 
 (** {1 Execution} *)
 
 val run : ('a, 'b) t -> 'a -> 'b
-(** [run r a] executes reagent [r] with input [a]. Commits atomically via
-    k-CAS. On transient failure, retries. On {!Xt.retry}, blocks until a
-    read-set location changes. *)
-
 val run_opt : ('a, 'b) t -> 'a -> 'b option
-(** [run_opt r a] executes [r]. Returns [Some b] on success, [None] if the
-    reagent retries (i.e., its precondition is not met). *)

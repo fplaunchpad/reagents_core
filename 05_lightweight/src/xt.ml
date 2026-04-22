@@ -23,13 +23,25 @@
     - If initial ≠ current → CAS (loc, initial, current) *)
 type entry = Entry : 'a Kcas.loc * 'a * 'a ref -> entry
 
-(** The transaction log. *)
+(** The transaction log.
+
+    [log]: CAS/CMP entries committed via k-CAS.
+    [post_commit]: actions (e.g., offer fulfillments) to run after successful
+    commit. Used by channels to deliver swapped values atomically with the
+    transaction. *)
 type t = {
   mutable log : entry list;
+  mutable post_commit : (unit -> unit) list;
 }
 
 (** Raised by [retry] to signal "block until a read-set location changes." *)
 exception Retry
+
+(** [post_commit ~xt f] schedules [f ()] to run after the transaction
+    successfully commits. If the transaction retries or or_else rolls back,
+    [f] is discarded. *)
+let add_post_commit ~(xt : t) (f : unit -> unit) : unit =
+  xt.post_commit <- f :: xt.post_commit
 
 (* ──────────────────────────────────────────────────────────────────────────
    Transaction operations
@@ -101,14 +113,16 @@ let retry () = raise Retry
 
 (** [or_else tx1 tx2 ~xt] runs [tx1]. If it calls [retry], rolls back the
     log entries added by [tx1] and runs [tx2]. If both retry, the [Retry]
-    exception propagates to [commit], which blocks on the union of both
-    read sets. *)
+    propagates to [commit], which blocks on the entries from the prefix and
+    [tx2] (entries from [tx1] were rolled back). *)
 let or_else (tx1 : xt:t -> 'a) (tx2 : xt:t -> 'a) ~(xt : t) : 'a =
-  let snap = xt.log in
+  let snap_log = xt.log in
+  let snap_post = xt.post_commit in
   match tx1 ~xt with
   | v -> v
   | exception Retry ->
-    xt.log <- snap;
+    xt.log <- snap_log;
+    xt.post_commit <- snap_post;
     tx2 ~xt
 
 (* ──────────────────────────────────────────────────────────────────────────
@@ -119,30 +133,27 @@ let or_else (tx1 : xt:t -> 'a) (tx2 : xt:t -> 'a) ~(xt : t) : 'a =
     - Entries where value unchanged → CMP (read-only validation)
     - Entries where value changed → CAS (read-write) *)
 let ops_of_log (log : entry list) : Kcas.op list =
-  List.filter_map (fun (Entry (loc, initial, current)) ->
+  List.map (fun (Entry (loc, initial, current)) ->
     if !current == initial then
-      Some (Kcas.CMP (loc, initial))
+      Kcas.CMP (loc, initial)
     else
-      Some (Kcas.CAS (loc, initial, !current))
+      Kcas.CAS (loc, initial, !current)
   ) log
 
-(** Collect all locations from the log (for registering awaiters on retry). *)
+(** Build awaiter-registration functions from the log entries. *)
 let locs_of_log (log : entry list) :
     (Kcas.awaiter -> bool) list =
   List.map (fun (Entry (loc, _, _)) ->
     fun awaiter -> Kcas.add_awaiter loc awaiter
   ) log
 
-(** Block until one of the logged locations changes, then return.
-
-    Uses [Trigger.await] to suspend the current fiber instead of
-    blocking the OS thread with Mutex/Condition. Must run within
-    [Sched.run]. *)
+(** Block the current fiber until an awaiter fires on one of the logged
+    locations, then return. Uses [Trigger.await] for fiber-level suspension. *)
 let block_on_log (log : entry list) : unit =
   if log = [] then ()
   else begin
     let trigger = Trigger.create () in
-    let awaiter () = Trigger.signal trigger |> ignore in
+    let awaiter () = ignore (Trigger.signal trigger) in
     let adders = locs_of_log log in
     List.iter (fun add ->
       let rec try_add () =
@@ -161,11 +172,15 @@ let block_on_log (log : entry list) : unit =
       until one changes, then retries. *)
 let commit (tx : xt:t -> 'a) : 'a =
   let rec loop () =
-    let xt = { log = [] } in
+    let xt = { log = []; post_commit = [] } in
     match tx ~xt with
     | result ->
       let ops = ops_of_log xt.log in
-      if Kcas.atomically ops then result
+      if Kcas.atomically ops then begin
+        (* Run post-commit actions (e.g., channel offer fulfillments). *)
+        List.iter (fun f -> f ()) xt.post_commit;
+        result
+      end
       else loop ()  (* transient failure, retry *)
     | exception Retry ->
       (* Block until a read-set location changes, then retry. *)
