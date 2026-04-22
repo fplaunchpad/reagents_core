@@ -1,10 +1,28 @@
 (** CPS-style reagent combinators with composable swap channels.
 
-    Unlike [03_stm]'s simpler reagent type ['a -> Xt.t -> 'b], this
-    reagent is a record that carries its continuation via the [seq]
-    field. This enables composable channel [swap] — see {!Channel.swap}. *)
+    Uses a two-phase offer protocol so that [swap + alternative] works
+    (if swap has no partner, fall through to alternative; only post an
+    offer and block if all alternatives would block). *)
 
-(** {1 Types} *)
+(** {1 Offers (shared slots for delivering results)} *)
+
+type 'a offer
+(** An offer is where a channel partner (or successful commit) will
+    deliver the final result. Created automatically by [run]. *)
+
+type 'a offer_state =
+  | Pending
+  | Fulfilled of 'a
+  | Signaled
+
+val make_offer : unit -> 'a offer
+val fulfill : 'a offer -> 'a -> bool
+val signal_offer : 'a offer -> unit
+val is_offer_pending : 'a offer -> bool
+val await_offer : 'a offer -> 'a
+val await_offer_state : 'a offer -> 'a offer_state
+
+(** {1 Reagent type} *)
 
 type 'a result =
   | Done of 'a       (** Success. *)
@@ -12,22 +30,19 @@ type 'a result =
   | Retry            (** Transient failure: retry. *)
 
 type ('a, 'b) t = {
-  try_react : 'a -> Xt.t -> 'b result;
+  try_react : 'a -> Xt.t -> 'b offer option -> 'b result;
   seq : 'c. ('b, 'c) t -> ('a, 'c) t;
 }
-(** A reagent from ['a] to ['b].
-
-    [try_react] runs the reagent, accumulating CAS/CMP ops in the [Xt] log.
-    [seq k] composes the reagent with continuation [k] — this is what makes
-    channel swap composable. *)
+(** A reagent from ['a] to ['b]. [try_react] runs the reagent; the
+    optional [offer] is where the final ['b] will be delivered if the
+    reagent blocks (e.g., swap posts the offer to a channel queue). *)
 
 type 'a ref = 'a Kcas.loc
 
 (** {1 Construction} *)
 
 val make_reagent : ('a -> Xt.t -> 'b result) -> ('a, 'b) t
-(** [make_reagent f] builds a reagent from a try function, generating
-    the [seq] field automatically. *)
+(** Build a reagent from a try function. *)
 
 (** {1 Ref operations} *)
 
@@ -44,14 +59,14 @@ val lift : ('a -> 'b) -> ('a, 'b) t
 (** {1 Combinators} *)
 
 val (>>) : ('a, 'b) t -> ('b, 'c) t -> ('a, 'c) t
-(** Sequential composition via [seq]. *)
-
 val (+) : ('a, 'b) t -> ('a, 'b) t -> ('a, 'b) t
-(** Choice: try first; on Block, try second. *)
-
 val pair : ('a, 'c) t -> ('b, 'd) t -> ('a * 'b, 'c * 'd) t
 
 (** {1 Execution} *)
 
 val run : ('a, 'b) t -> 'a -> 'b
+(** Two-phase execution: try without offer, then with offer if the first
+    attempt blocked. *)
+
 val run_opt : ('a, 'b) t -> 'a -> 'b option
+(** Phase-1 only: returns [None] if the reagent would block. *)

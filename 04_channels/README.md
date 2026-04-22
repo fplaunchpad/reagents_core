@@ -26,6 +26,10 @@ type ('a, 'b) t = {
 
 The `seq` field is the explicit continuation mechanism. `r1 >> r2 = r1.seq r2`.
 
+The `try_react` function also takes an optional `'b offer` (where the final
+result will be delivered if the reagent blocks). This enables the two-phase
+offer protocol needed for `swap + alternative`.
+
 ## Composable swap
 
 ```ocaml
@@ -55,15 +59,31 @@ action so the result is delivered only if the whole thing succeeds.
 6. B commits atomically (Xt ops from both sides + post-commit fulfillment).
 7. A wakes up with `r_A`.
 
+## Two-phase offer protocol
+
+`run` attempts the reagent in two phases:
+
+1. **Without offer**: swap returns `Block` if no partner is waiting.
+   The `+` combinator can then try alternatives.
+2. **With offer**: if phase 1 returned `Block`, create an offer and
+   try again. Now swap *can* post the offer to its channel. When
+   a partner arrives, they fulfill the offer. Meanwhile, we also
+   install awaiters on the read-set locations — so any change
+   to a `upd`/`cas` precondition wakes us up to retry phase 1.
+
+This makes these work:
+```ocaml
+(* Fall through to default if no partner: *)
+Channel.swap ep + constant 42
+
+(* Offer on two channels, take whichever matches first: *)
+Channel.swap ep1 + Channel.swap ep2
+```
+
 ## Tests
 
 - Basic swap between two domains
 - Multiple sequential swaps
 - Composable swap: `swap >> push stack`, `swap >> store ref`
+- Choice: `swap + constant`, `swap + swap` (offer on both, matches whichever arrives)
 - Ping-pong between two domains
-
-## Limitations
-
-`swap + alternative` (choice where swap falls through if no partner) requires
-a two-phase protocol (try without offer first, post offer only if all
-alternatives block). Not implemented in this minimal version.

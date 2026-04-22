@@ -43,6 +43,34 @@ exception Retry
 let add_post_commit ~(xt : t) (f : unit -> unit) : unit =
   xt.post_commit <- f :: xt.post_commit
 
+(** An opaque snapshot of a transaction's log. Used by channel swap to
+    transfer pre-swap ops from one thread to a matching partner. *)
+type snapshot = {
+  snap_log : entry list;
+  snap_post_commit : (unit -> unit) list;
+}
+
+let snapshot ~(xt : t) : snapshot =
+  { snap_log = xt.log; snap_post_commit = xt.post_commit }
+
+(** [merge ~xt snap] prepends the snapshotted log entries into [xt].
+    Used when a partner arrives at a channel — they absorb the other
+    side's pre-swap ops into their own transaction. *)
+let merge ~(xt : t) (snap : snapshot) : unit =
+  xt.log <- snap.snap_log @ xt.log;
+  xt.post_commit <- snap.snap_post_commit @ xt.post_commit
+
+(** [install_awaiters snap cb] registers [cb] as an awaiter on every
+    location in the snapshot's log. Used by reagent [run] to wake up when
+    any read-set location changes. *)
+let install_awaiters (snap : snapshot) (cb : unit -> unit) : unit =
+  List.iter (fun (Entry (loc, _, _)) ->
+    let rec try_add () =
+      if not (Kcas.add_awaiter loc cb) then try_add ()
+    in
+    try_add ()
+  ) snap.snap_log
+
 (* ──────────────────────────────────────────────────────────────────────────
    Transaction operations
    ────────────────────────────────────────────────────────────────────────── *)
@@ -148,7 +176,7 @@ let locs_of_log (log : entry list) :
   ) log
 
 (** Block the current fiber until an awaiter fires on one of the logged
-    locations, then return. Uses [Trigger.await] for fiber-level suspension. *)
+    locations, then return. Uses [Trigger.await] instead of Mutex/Condition. *)
 let block_on_log (log : entry list) : unit =
   if log = [] then ()
   else begin

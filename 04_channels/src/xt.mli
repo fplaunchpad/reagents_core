@@ -62,3 +62,13 @@ val add_post_commit : xt:t -> (unit -> unit) -> unit
 (** [add_post_commit ~xt f] schedules [f ()] to run after the transaction
     successfully commits. If the transaction retries or or_else rolls back,
     [f] is discarded. Used by channels to deliver swapped values atomically. *)
+
+(** {1 Snapshots (used by channel swap)} *)
+
+type snapshot
+
+val snapshot : xt:t -> snapshot
+val merge : xt:t -> snapshot -> unit
+val install_awaiters : snapshot -> (unit -> unit) -> unit
+(** [install_awaiters snap cb] registers [cb] on every location in the
+    snapshot's log, so any change wakes the caller. *)

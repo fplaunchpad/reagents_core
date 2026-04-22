@@ -76,9 +76,29 @@ let test_swap_composed_with_cas () =
   assert_eq "a = 20" 20 (Reagent.get a);
   assert_eq "b = 10" 10 (Reagent.get b)
 
-(* Note: [swap + alternative] for fall-through requires a two-phase offer
-   protocol (try without offer first, post offer only if all alternatives
-   block). Not implemented in this minimal version. *)
+(* ── Choice: swap + alternative (two-phase offer protocol) ─────────────── *)
+
+let test_swap_or_default () =
+  (* If no partner available, fall through to constant. *)
+  let ep1, _ep2 = Channel.mk_chan () in
+  let r = Reagent.(+) (Channel.swap ep1) (Reagent.constant 999) in
+  let got = Reagent.run r 42 in
+  assert_eq "fell through to 999" 999 got
+
+let test_swap_or_swap () =
+  (* Two channels; a partner arrives on the second. Should match that one. *)
+  let ep1a, _ep1b = Channel.mk_chan () in
+  let ep2a, ep2b = Channel.mk_chan () in
+  let d = Domain.spawn (fun () ->
+    (* Wait a bit, then send on ep2 *)
+    Unix.sleepf 0.02;
+    Reagent.run (Channel.swap ep2b) 77) in
+  (* We offer on both channels; only ep2 has a partner *)
+  let r = Reagent.(+) (Channel.swap ep1a) (Channel.swap ep2a) in
+  let got = Reagent.run r 99 in
+  let other = Domain.join d in
+  assert_eq "got from ep2" 77 got;
+  assert_eq "partner got" 99 other
 
 (* ── Ping pong ──────────────────────────────────────────────────────────── *)
 
@@ -117,6 +137,10 @@ let () =
   List.iter (fun (n, f) -> run_test n f)
     ["swap_then_push", test_swap_then_push;
      "swap_composed_with_cas", test_swap_composed_with_cas];
+  Printf.printf "\nChoice:\n%!";
+  List.iter (fun (n, f) -> run_test n f)
+    ["swap_or_default", test_swap_or_default;
+     "swap_or_swap", test_swap_or_swap];
   Printf.printf "\nPing-pong:\n%!";
   run_test "ping_pong" test_ping_pong;
   Printf.printf "\nAll tests passed.\n%!"
