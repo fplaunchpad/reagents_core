@@ -7,3 +7,6 @@
 [submodule "reference/reagents"]
 	path = reference/reagents
 	url = https://github.com/ocaml-multicore/reagents.git
+[submodule "reference/ChemistrySet"]
+	path = reference/ChemistrySet
+	url = https://github.com/aturon/ChemistrySet
