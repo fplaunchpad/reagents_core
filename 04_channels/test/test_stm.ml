@@ -432,15 +432,6 @@ let test_reagent_lift () =
   let pop_doubled = Reagent.(Treiber_stack.pop s >> lift (fun x -> x * 2)) in
   assert_eq "lift" 10 (Reagent.run pop_doubled ())
 
-(* Pair: push to two stacks atomically *)
-let test_reagent_pair () =
-  let s1 = Treiber_stack.create () in
-  let s2 = Treiber_stack.create () in
-  let push_both = Reagent.pair (Treiber_stack.push s1) (Treiber_stack.push s2) in
-  Reagent.run push_both (10, 20) |> ignore;
-  assert_eq "pair s1" 10 (Reagent.run (Treiber_stack.pop s1) ());
-  assert_eq "pair s2" 20 (Reagent.run (Treiber_stack.pop s2) ())
-
 (* Constant: ignore pop result and produce a fixed value *)
 let test_reagent_constant () =
   let s = Treiber_stack.create () in
@@ -536,7 +527,6 @@ let () =
      "reagent_run_opt", test_reagent_run_opt;
      "reagent_blocking_pop", test_reagent_blocking_pop;
      "reagent_lift", test_reagent_lift;
-     "reagent_pair", test_reagent_pair;
      "reagent_constant", test_reagent_constant;
      "reagent_concurrent", test_reagent_concurrent;
      "reagent_transfer_chain", test_reagent_transfer_chain];

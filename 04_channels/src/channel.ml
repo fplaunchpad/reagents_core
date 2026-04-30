@@ -1,34 +1,42 @@
 (** Composable swap channels as reagents.
 
-    [swap] is a proper reagent of type [('a, 'b) Reagent.t] that composes
-    with other reagents.
+    [swap] is a proper reagent of type [('a, 'b) Reagent.t] that
+    composes with other reagents.
 
     {2 Two-phase protocol}
 
     When [run] calls [try_react ... None] (phase 1):
     - If a partner is in the incoming queue: match and proceed.
-    - Otherwise: return [Block] without posting anything. This lets
-      [+] try alternatives.
+    - Otherwise: return [Block] without posting. This lets [+] try
+      alternatives.
 
     When [run] calls [try_react ... (Some offer)] (phase 2):
     - If a partner is in the incoming queue: match and proceed.
     - Otherwise: post a message with the offer and our pre-swap xt
       snapshot, return [Block]. A future partner will take the message,
-      run our continuation, and fulfill the offer — delivering the
-      final result to the waiting thread. *)
+      run our continuation, and CAS the offer to [Completed] as part of
+      their commit's kCAS.
+
+    {2 Atomic offer fulfilment}
+
+    The partner's [swap_k] reads our offer's state loc into the xt and
+    sets it to [Completed v]. At the partner's commit, this becomes a
+    CAS Empty→Completed bundled into the same kCAS as the rest of the
+    swap. So either the entire exchange commits and the offer is
+    fulfilled, or nothing happens. No post-commit window. *)
 
 (* ──────────────────────────────────────────────────────────────────────────
    Messages and endpoints
    ────────────────────────────────────────────────────────────────────────── *)
 
-(** An existentially-typed message posted to a channel.
+(** An existentially-typed message in a channel queue.
 
-    Contains:
-    - The payload being sent.
-    - The sender's continuation (typed ['b -> 'final] as a reagent).
-    - The sender's offer, where the final result will be delivered.
-    - A snapshot of the sender's xt log (pre-swap ops), which the
-      matching partner will merge into their own transaction. *)
+    Carries:
+    - the payload being sent
+    - the sender's continuation (typed ['b -> 'final] as a reagent)
+    - the sender's offer loc (where the final result will land via CAS)
+    - a snapshot of the sender's xt log (pre-swap reads/writes), which
+      a matching partner merges into their own transaction. *)
 type ('a, 'b) message =
   | Message :
       'a
@@ -50,12 +58,13 @@ let mk_chan () : ('a, 'b) endpoint * ('b, 'a) endpoint =
   ( { outgoing = q1; incoming = q2; lock },
     { outgoing = q2; incoming = q1; lock } )
 
-(** Remove messages whose offers have already been fulfilled. *)
+(** Drop messages from the head whose offers are no longer Empty
+    (someone fulfilled or rescinded them already). *)
 let clean (q : ('a, 'b) message Queue.t) : unit =
   let rec loop () =
     match Queue.peek_opt q with
     | Some (Message (_, _, offer, _))
-      when not (Reagent.is_offer_pending offer) ->
+      when not (Reagent.is_offer_active offer) ->
       ignore (Queue.pop q); loop ()
     | _ -> ()
   in
@@ -65,19 +74,26 @@ let clean (q : ('a, 'b) message Queue.t) : unit =
    Swap as a reagent
    ────────────────────────────────────────────────────────────────────────── *)
 
-(** [swap_k dual_payload partner_offer] builds a reagent that "delivers"
-    its input to [partner_offer] on commit, then continues with
-    [dual_payload].
+(** [swap_k dual_payload partner_offer] is the receiver-side wrapper:
+    given the partner's continuation result [my_result], CAS the
+    partner's offer Empty→Completed in the current transaction, then
+    proceed with [dual_payload] to the receiver's own continuation.
 
-    Used when B matches A's posted message: B wraps A's continuation
-    with this so A's final result gets routed to A's offer. *)
+    Reading the offer state loc records a CMP at the read value; setting
+    it records a CAS to Completed. Both end up in the kCAS at commit. If
+    the offer's state isn't Empty (rescinded by sender or fulfilled by
+    another receiver), return [Retry] so the receiver retries cleanly. *)
 let swap_k :
   type a b. a -> b Reagent.offer -> (b, a) Reagent.t =
   fun dual_payload partner_offer ->
+    let loc = Reagent.offer_state_loc partner_offer in
     Reagent.make_reagent (fun my_result xt ->
-      Xt.add_post_commit ~xt (fun () ->
-        ignore (Reagent.fulfill partner_offer my_result));
-      Reagent.Done dual_payload)
+      match Xt.get ~xt loc with
+      | Reagent.Empty ->
+        Xt.set ~xt loc (Reagent.Completed my_result);
+        Reagent.Done dual_payload
+      | Reagent.Completed _ | Reagent.Rescinded ->
+        Reagent.Retry)
 
 (** [swap ep] is the channel swap reagent. *)
 let swap (ep : ('a, 'b) endpoint) : ('a, 'b) Reagent.t =
@@ -94,15 +110,16 @@ let swap (ep : ('a, 'b) endpoint) : ('a, 'b) Reagent.t =
           (* Merge partner's pre-swap xt entries into ours. *)
           Xt.merge ~xt partner_snap;
           (* Build the merged reagent: run partner's continuation with
-             our payload, deliver partner's result to their offer, then
-             run our continuation with partner's payload. *)
+             our payload, deliver partner's result to their offer (CAS
+             in the kCAS), then run our continuation with partner's
+             payload. *)
           let merged =
             Reagent.(partner_k >> swap_k partner_payload partner_offer >> k)
           in
           merged.try_react payload xt offer
         | None ->
-          (* No partner. If we have an offer, post a message; otherwise
-             return Block so [+] can try alternatives. *)
+          (* No partner. With an offer, post for a future partner.
+             Without one, return Block so [+] can try alternatives. *)
           (match offer with
            | None ->
              Mutex.unlock ep.lock;
@@ -114,6 +131,7 @@ let swap (ep : ('a, 'b) endpoint) : ('a, 'b) Reagent.t =
              Mutex.unlock ep.lock;
              Reagent.Block));
       seq = (fun k' -> build (Reagent.(k >> k')));
+      always_commits = false;
     }
   in
   let terminal = Reagent.make_reagent (fun b _xt -> Reagent.Done b) in

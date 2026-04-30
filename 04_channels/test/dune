@@ -6,6 +6,10 @@
  (name test_channel)
  (libraries channels))
 
+(test
+ (name test_elimination)
+ (libraries channels unix))
+
 (executable
  (name lin_stm)
  (libraries channels qcheck-lin.domain))

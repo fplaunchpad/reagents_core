@@ -61,9 +61,31 @@ val commit : (xt:t -> 'a) -> 'a
 val add_post_commit : xt:t -> (unit -> unit) -> unit
 (** [add_post_commit ~xt f] schedules [f ()] to run after the transaction
     successfully commits. If the transaction retries or or_else rolls back,
-    [f] is discarded. Used by channels to deliver swapped values atomically. *)
+    [f] is discarded. *)
 
-(** {1 Snapshots (used by channel swap)} *)
+(** {1 Single-shot commit (used by the Reagent commit primitive)} *)
+
+val fresh : unit -> t
+(** A new empty transaction log. *)
+
+val try_commit_log : t -> bool
+(** Single-shot k-CAS attempt of the current log. Returns [true] on success
+    (and fires post-commit hooks); returns [false] on k-CAS failure (no
+    retry, no awaiters). The reagent layer uses this so a failed commit
+    surfaces as [Retry] from [try_react] and the [+] combinator can
+    dispatch to the alternative branch. *)
+
+(** {1 Branch-local checkpoints (used by Reagent's [+] for branch isolation)} *)
+
+type checkpoint
+
+val checkpoint : t -> checkpoint
+val rollback : t -> checkpoint -> unit
+(** Capture / restore the log + post-commit state. Distinct from
+    cross-thread [snapshot]/[merge] below — this is for in-thread
+    rollback when one branch of [+] fails and we want to try the next. *)
+
+(** {1 Cross-thread snapshots (used by channel swap)} *)
 
 type snapshot
 

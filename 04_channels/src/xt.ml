@@ -207,6 +207,36 @@ let block_on_log (log : entry list) : unit =
     end
   end
 
+(** Allocate an empty transaction log. *)
+let fresh () : t = { log = []; post_commit = [] }
+
+(** Single-shot k-CAS attempt. On success, fires post-commit hooks and
+    returns [true]. On k-CAS failure, returns [false] without retrying or
+    blocking. Used by the Reagent [commit] primitive so a failed commit
+    surfaces as [Retry] up the reagent chain. *)
+let try_commit_log (xt : t) : bool =
+  let ops = ops_of_log xt.log in
+  if Kcas.atomically ops then begin
+    List.iter (fun f -> f ()) xt.post_commit;
+    true
+  end
+  else false
+
+(** Branch-local checkpoint: log + post-commit. Distinct from cross-thread
+    [snapshot]/[merge]; this captures all the mutable state of [t] for
+    in-thread restoration. *)
+type checkpoint = {
+  cp_log : entry list;
+  cp_post_commit : (unit -> unit) list;
+}
+
+let checkpoint (xt : t) : checkpoint =
+  { cp_log = xt.log; cp_post_commit = xt.post_commit }
+
+let rollback (xt : t) (cp : checkpoint) : unit =
+  xt.log <- cp.cp_log;
+  xt.post_commit <- cp.cp_post_commit
+
 (** [commit tx] runs transaction [tx], then commits atomically via k-CAS.
 
     - On success: returns the result.
@@ -215,15 +245,10 @@ let block_on_log (log : entry list) : unit =
       until one changes, then retries. *)
 let commit (tx : xt:t -> 'a) : 'a =
   let rec loop () =
-    let xt = { log = []; post_commit = [] } in
+    let xt = fresh () in
     match tx ~xt with
     | result ->
-      let ops = ops_of_log xt.log in
-      if Kcas.atomically ops then begin
-        (* Run post-commit actions (e.g., channel offer fulfillments). *)
-        List.iter (fun f -> f ()) xt.post_commit;
-        result
-      end
+      if try_commit_log xt then result
       else loop ()  (* transient failure, retry *)
     | exception Retry ->
       (* Block until a read-set location changes, then retry. *)

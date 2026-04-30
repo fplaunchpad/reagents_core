@@ -1,149 +1,168 @@
-(** CPS-style reagent combinators with composable swap channels.
+(** CPS reagents with first-class commit and a two-phase offer protocol.
 
-    Unlike [03_stm]'s simpler reagent (a plain function
-    ['a -> Xt.t -> 'b]), this reagent is a record that carries its
-    continuation explicitly via the [seq] field. This is what makes
-    channel [swap] composable — a swap posts its continuation to the
-    channel, and a matching partner runs the continuation before
-    committing the combined transaction.
+    Three load-bearing ideas, all from Turon (PLDI 2012):
 
-    Execution uses a two-phase protocol:
-    1. Without offer: try to complete synchronously. Channel swap returns
-       [Block] if no partner. The [+] combinator can try alternatives.
-    2. With offer: if phase 1 blocked, create an offer and try again.
-       Channel swap posts the offer to its outgoing queue. When a partner
-       arrives, they fulfill the offer and we wake up.
+    1. [commit] is itself a reagent appended to every primitive's chain.
+       A failed kCAS surfaces as [Retry] from [try_react] so [+] can
+       dispatch to the alternative. Without this, push-via-[upd] would
+       always return [Done] from the body and the [+]-elimination
+       pattern would never kick in under contention.
 
-    Based on the original reagents paper (Turon, PLDI 2012). *)
+    2. [BlockAndRetry] distinguishes "one branch blocks, another has
+       transient failure" from pure block or pure retry. The run loop
+       uses this to decide whether to enter phase 2 (with offer).
+
+    3. Offers live in [Kcas.loc]s so partner fulfilment is part of the
+       same kCAS as the rest of the swap. Lock-free; matches reference. *)
 
 (* ──────────────────────────────────────────────────────────────────────────
    Offers
    ────────────────────────────────────────────────────────────────────────── *)
 
-(** An offer is a shared slot that can be:
-    - Fulfilled with a value (by a channel partner on commit)
-    - Signaled (by an awaiter firing on a read-set location change)
-    The awaiting thread wakes up in either case. *)
 type 'a offer_state =
-  | Pending
-  | Fulfilled of 'a
-  | Signaled      (** A watched location changed; caller should retry. *)
+  | Empty
+  | Completed of 'a
+  | Rescinded
 
 type 'a offer = {
-  mutable state : 'a offer_state;
+  state : 'a offer_state Kcas.loc;
   mutex : Mutex.t;
   cond : Condition.t;
 }
 
 let make_offer () : 'a offer = {
-  state = Pending;
+  state = Kcas.make Empty;
   mutex = Mutex.create ();
   cond = Condition.create ();
 }
 
-(** [fulfill offer v] delivers [v] to the offer. Returns [true] on success,
-    [false] if the offer was already fulfilled or signaled. *)
-let fulfill (offer : 'a offer) (v : 'a) : bool =
-  Mutex.lock offer.mutex;
-  let ok = match offer.state with
-    | Pending ->
-      offer.state <- Fulfilled v;
-      Condition.signal offer.cond;
-      true
-    | _ -> false
+let offer_state_loc o = o.state
+
+let is_offer_active o =
+  match Kcas.get o.state with Empty -> true | _ -> false
+
+(** Try to rescind: CAS Empty→Rescinded. Used by both the read-set
+    awaiter callback (precondition changed, abandon the offer) and by
+    the [commit] reagent (cancel the offer just before our own kCAS).
+    No-op if the offer is already non-Empty. *)
+let signal_offer (o : 'a offer) : unit =
+  ignore (Kcas.compare_and_set o.state Empty Rescinded)
+
+(** Wake any thread parked in [await_offer] for this offer. Awaiter
+    callback installed on the offer's loc. *)
+let wake_offer (o : 'a offer) () : unit =
+  Mutex.lock o.mutex;
+  Condition.signal o.cond;
+  Mutex.unlock o.mutex
+
+(** Park until the offer transitions out of [Empty]. The kCAS that
+    transitions the offer fires our awaiter, signaling the cond. We
+    re-read the loc state inside the lock to handle the case where the
+    transition happened before our awaiter was installed. *)
+let await_offer (o : 'a offer) : 'a offer_state =
+  let cb = wake_offer o in
+  let rec install () =
+    if not (Kcas.add_awaiter o.state cb) then install ()
   in
-  Mutex.unlock offer.mutex;
-  ok
+  install ();
+  Mutex.lock o.mutex;
+  let rec wait_loop () =
+    match Kcas.get o.state with
+    | Empty -> Condition.wait o.cond o.mutex; wait_loop ()
+    | st -> st
+  in
+  let final = wait_loop () in
+  Mutex.unlock o.mutex;
+  final
 
-(** [signal_offer offer] wakes the awaiting thread without delivering a
-    value — used by awaiters on read-set locations. *)
-let signal_offer (offer : 'a offer) : unit =
-  Mutex.lock offer.mutex;
-  (match offer.state with
-   | Pending ->
-     offer.state <- Signaled;
-     Condition.signal offer.cond
-   | _ -> ());
-  Mutex.unlock offer.mutex
-
-let is_offer_pending (offer : 'a offer) : bool =
-  match offer.state with Pending -> true | _ -> false
-
-(** Wait until the offer is fulfilled or signaled. Returns the state. *)
-let await_offer_state (offer : 'a offer) : 'a offer_state =
-  Mutex.lock offer.mutex;
-  while offer.state = Pending do
-    Condition.wait offer.cond offer.mutex
-  done;
-  let s = offer.state in
-  Mutex.unlock offer.mutex;
-  s
-
-(** Block until the offer is fulfilled with a value. Raises if signaled
-    without a value (caller should retry). *)
-let await_offer (offer : 'a offer) : 'a =
-  match await_offer_state offer with
-  | Fulfilled v -> v
-  | Signaled -> failwith "await_offer: signaled without value"
-  | Pending -> assert false
+(** [try_rescind o] = same CAS as [signal_offer], but reports the
+    outcome: [None] if we successfully rescinded (or it was already
+    Rescinded), [Some v] if a partner had completed it before us. *)
+let try_rescind (o : 'a offer) : 'a option =
+  if Kcas.compare_and_set o.state Empty Rescinded then None
+  else match Kcas.get o.state with
+    | Completed v -> Some v
+    | Rescinded -> None
+    | Empty -> assert false
 
 (* ──────────────────────────────────────────────────────────────────────────
    Reagent type
    ────────────────────────────────────────────────────────────────────────── *)
 
-(** Outcome of attempting to run a reagent. *)
 type 'a result =
-  | Done of 'a       (** Success. *)
-  | Block            (** Permanent failure: precondition not met. *)
-  | Retry            (** Transient failure: retry with fresh state. *)
+  | Done of 'a
+  | Block
+  | Retry
+  | BlockAndRetry
 
-(** A reagent transforming input ['a] to output ['b].
-
-    - [try_react a xt offer]: attempt to run. The optional offer is where
-      the final ['b] will be delivered if the reagent blocks (e.g., swap
-      posts this offer to the channel queue).
-    - [seq k]: compose with continuation [k]. *)
 type ('a, 'b) t = {
   try_react : 'a -> Xt.t -> 'b offer option -> 'b result;
   seq : 'c. ('b, 'c) t -> ('a, 'c) t;
+  always_commits : bool;
 }
 
 type 'a ref = 'a Kcas.loc
 
 (* ──────────────────────────────────────────────────────────────────────────
-   Primitive reagent construction
+   The [commit] primitive — the core of the algorithm.
+
+   When called with no offer: try the kCAS. If it succeeds, [Done];
+   else [Retry] so an enclosing [+] can take the alternative.
+
+   When called with an offer: first rescind it (so future channel
+   partners can't fulfil an offer we're about to commit past). If
+   rescind found we'd already been completed by a partner, return that
+   value (the partner's swap won the race; we honour their result).
+   Otherwise commit our kCAS as usual.
+
+   [commit.seq next = next] absorbs itself, so the chain still ends in
+   exactly one commit (at the rightmost primitive).
    ────────────────────────────────────────────────────────────────────────── *)
 
-(** [make_reagent f] builds a reagent from a try function. The [seq]
-    field is generated by composing [f] with the continuation.
-
-    When [seq k] is applied, the resulting reagent's [try_react] runs
-    [f] with {i no} offer (since the offer is owned by the tail of the
-    chain), then passes [f]'s output to [k.try_react] with the {i real}
-    offer. This matches the reference implementation: only the operation
-    at the tail (typically a swap) gets to see the offer. *)
-let rec make_reagent : type a b. (a -> Xt.t -> b result) -> (a, b) t =
-  fun f -> {
-    try_react = (fun a xt _offer -> f a xt);
-    seq = (fun k -> make_reagent_seq f k);
-  }
-
-and make_reagent_seq :
-  type a b c. (a -> Xt.t -> b result) -> (b, c) t -> (a, c) t =
-  fun f k -> {
-    try_react = (fun a xt offer ->
-      match f a xt with
-      | Done b -> k.try_react b xt offer
-      | Block -> Block
-      | Retry -> Retry);
-    seq = (fun k' -> make_reagent_seq f (compose k k'));
-  }
-
-and compose : type a b c. (a, b) t -> (b, c) t -> (a, c) t =
-  fun r1 r2 -> r1.seq r2
+let commit : type a. (a, a) t = {
+  try_react = (fun a xt offer ->
+    match offer with
+    | None ->
+      if Xt.try_commit_log xt then Done a else Retry
+    | Some o ->
+      match try_rescind o with
+      | Some v -> Done v
+      | None ->
+        if Xt.try_commit_log xt then Done a else Retry);
+  seq = (fun (type c) (next : (a, c) t) -> next);
+  always_commits = true;
+}
 
 (* ──────────────────────────────────────────────────────────────────────────
-   Ref operations (none block, so offer is unused)
+   Primitive construction.
+
+   [mk_reagent body k] composes a body function with a continuation [k].
+   The body returns [Done b]/[Block]/[Retry]; on [Done], its output
+   feeds [k]. The body does not see the offer (only [commit] and
+   custom reagents like [swap] need it).
+
+   [make_reagent body] = [mk_reagent body commit] — the standard pattern
+   for primitives that just want to run a body and then commit at the
+   tail.
+   ────────────────────────────────────────────────────────────────────────── *)
+
+let rec mk_reagent : type a b c.
+    (a -> Xt.t -> b result) -> (b, c) t -> (a, c) t =
+  fun body k -> {
+    try_react = (fun a xt offer ->
+      match body a xt with
+      | Done b -> k.try_react b xt offer
+      | Block -> Block
+      | Retry -> Retry
+      | BlockAndRetry -> BlockAndRetry);
+    seq = (fun next -> mk_reagent body (k.seq next));
+    always_commits = k.always_commits;
+  }
+
+let make_reagent body = mk_reagent body commit
+
+(* ──────────────────────────────────────────────────────────────────────────
+   Ref operations
    ────────────────────────────────────────────────────────────────────────── *)
 
 let ref v = Kcas.make v
@@ -172,98 +191,104 @@ let lift f = make_reagent (fun a _ -> Done (f a))
    Combinators
    ────────────────────────────────────────────────────────────────────────── *)
 
-(** Sequential composition via the [seq] field. *)
 let (>>) r1 r2 = r1.seq r2
 
-(** Choice: try [r1]; on Block, try [r2]. *)
+(** Choice. Snapshots [xt] before [r1], runs it; on any non-[Done],
+    rolls [xt] back and runs [r2]. The result table mirrors the
+    reference exactly so [run] can dispatch correctly:
+
+    | r1            | r2          | result        |
+    |---------------|-------------|---------------|
+    | Done          | (not run)   | Done          |
+    | Block         | Done        | Done          |
+    | Block         | Block       | Block         |
+    | Block         | Retry       | BlockAndRetry |
+    | Block         | BlockAndR.  | BlockAndR.    |
+    | Retry         | Done        | Done          |
+    | Retry         | Block       | BlockAndRetry |
+    | Retry         | Retry       | Retry         |
+    | Retry         | BlockAndR.  | BlockAndR.    |
+    | BlockAndRetry | anything≠Done | BlockAndR.  |
+*)
 let rec (+) : type a b. (a, b) t -> (a, b) t -> (a, b) t =
   fun r1 r2 -> {
     try_react = (fun a xt offer ->
+      let cp = Xt.checkpoint xt in
       match r1.try_react a xt offer with
       | Done _ as v -> v
-      | Block -> r2.try_react a xt offer
+      | Block ->
+        Xt.rollback xt cp;
+        (match r2.try_react a xt offer with
+         | Retry -> BlockAndRetry
+         | v -> v)
       | Retry ->
-        match r2.try_react a xt offer with
-        | Done _ as v -> v
-        | Block | Retry -> Retry);
+        Xt.rollback xt cp;
+        (match r2.try_react a xt offer with
+         | Block -> BlockAndRetry
+         | v -> v)
+      | BlockAndRetry ->
+        Xt.rollback xt cp;
+        (match r2.try_react a xt offer with
+         | Block | Retry -> BlockAndRetry
+         | v -> v));
     seq = (fun k -> (r1.seq k) + (r2.seq k));
+    always_commits = r1.always_commits && r2.always_commits;
   }
 
-let pair r1 r2 = make_reagent (fun (a, b) xt ->
-  (* pair doesn't propagate an offer — both subcomponents must complete
-     synchronously for pair to succeed. *)
-  match r1.try_react a xt None with
-  | Done c -> (match r2.try_react b xt None with
-               | Done d -> Done (c, d)
-               | Block -> Block
-               | Retry -> Retry)
-  | Block -> Block
-  | Retry -> Retry)
-
 (* ──────────────────────────────────────────────────────────────────────────
-   Execution (two-phase protocol)
+   Execution (two-phase)
+
+   Phase 1 (no offer): try synchronously. On [Done], return. On [Retry],
+   pause and re-try phase 1. On [Block]/[BlockAndRetry], enter phase 2.
+
+   Phase 2 (with fresh offer): try once. On [Done], return. On [Block],
+   the reagent has either posted the offer to a channel or returned
+   without finding a precondition; install awaiters on the read-set so
+   any change to a watched location signals the offer, then park. On
+   [Retry]/[BlockAndRetry], pause briefly and try to rescind the offer:
+   if a partner had completed it concurrently, take their value; else
+   loop with a fresh offer.
    ────────────────────────────────────────────────────────────────────────── *)
 
-(** Two-phase [run]:
-
-    - Phase 1 (no offer): try the reagent. If [Done], commit and return.
-      If [Block], go to phase 2. If [Retry] or commit interference, retry.
-    - Phase 2 (with offer): create an offer, try again. On [Done], commit
-      and return (offer discarded). On [Block], the reagent posted the
-      offer to one or more channels — wait for a partner to fulfill it.
-      On [Retry], try phase 2 again. *)
 let run r a =
-  let rec phase1 () =
-    let result = Stdlib.ref None in
-    (try
-      Xt.commit (fun ~xt ->
-        match r.try_react a xt None with
-        | Done b -> result := Some b
-        | Block -> result := None
-        | Retry -> result := None; Xt.retry ())
-    with _ -> ());
-    match !result with
-    | Some b -> b
-    | None -> phase2 ()
+  let rec without_offer () =
+    let xt = Xt.fresh () in
+    match r.try_react a xt None with
+    | Done v -> v
+    | Retry -> Domain.cpu_relax (); without_offer ()
+    | Block | BlockAndRetry -> with_offer ()
 
-  and phase2 () =
+  and with_offer () =
     let offer = make_offer () in
-    let result = Stdlib.ref None in
-    let snapshot = Stdlib.ref None in
-    (try
-      Xt.commit (fun ~xt ->
-        match r.try_react a xt (Some offer) with
-        | Done b -> result := Some b
-        | Block ->
-          (* Save the xt snapshot so we can install awaiters on read-set
-             locations — any change should wake us up to retry. *)
-          snapshot := Some (Xt.snapshot ~xt);
-          result := None
-        | Retry -> result := None; Xt.retry ())
-    with _ -> ());
-    match !result with
-    | Some b -> b  (* Synchronous completion. *)
-    | None ->
-      (* Install awaiters on read-set locations that will signal the
-         offer if anything changes (unblocking upd/cas-style blocks). *)
-      (match !snapshot with
-       | Some snap -> Xt.install_awaiters snap (fun () -> signal_offer offer)
-       | None -> ());
-      match await_offer_state offer with
-      | Fulfilled v -> v
-      | Signaled -> phase1 ()  (* a read-set location changed; retry *)
-      | Pending -> assert false
+    let xt = Xt.fresh () in
+    match r.try_react a xt (Some offer) with
+    | Done v -> v
+    | Block ->
+      let snap = Xt.snapshot ~xt in
+      Xt.install_awaiters snap (fun () -> signal_offer offer);
+      (match await_offer offer with
+       | Completed v -> v
+       | Rescinded -> without_offer ()
+       | Empty -> assert false)
+    | Retry | BlockAndRetry ->
+      Domain.cpu_relax ();
+      (match try_rescind offer with
+       | Some v -> v
+       | None -> with_offer ())
   in
-  phase1 ()
+  without_offer ()
 
-(** [run_opt] does phase 1 only — returns [None] if the reagent blocks. *)
 let run_opt r a =
-  let result = Stdlib.ref None in
-  (try
-    Xt.commit (fun ~xt ->
-      match r.try_react a xt None with
-      | Done b -> result := Some b
-      | Block -> result := None
-      | Retry -> result := None; Xt.retry ())
-  with _ -> result := None);
-  !result
+  (* Phase-1 only: never posts an offer, never installs awaiters.
+     But transient kCAS conflicts ([Retry] from [commit]) are not a
+     "would block" condition — we retry until we either succeed or hit
+     a real precondition failure ([Block]/[BlockAndRetry]). This mirrors
+     the linearizability semantics of [Xt.commit]'s internal retry. *)
+  let rec loop () =
+    let xt = Xt.fresh () in
+    match r.try_react a xt None with
+    | Done v -> Some v
+    | Retry -> Domain.cpu_relax (); loop ()
+    | Block | BlockAndRetry -> None
+  in
+  loop ()
