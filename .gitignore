@@ -1,3 +1,14 @@
 _build/
 *.install
 .merlin
+
+
+*.aux
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.synctex.gz
+*.synctex
+.auctex-auto/
+.DS_Store

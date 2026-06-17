@@ -111,6 +111,27 @@ let test_stack_concurrent () =
     count := !local);
   assert_eq "total count" 200 !count
 
+(* ── push + swap: + should dispatch to swap when push fails ─────────────── *)
+
+let test_push_plus_swap_should_elide () =
+  let s = Treiber_stack.create () in
+  let ep1, ep2 = Channel.mk_chan () in
+  let partner_matched = Stdlib.ref false in
+  Sched.run (fun () ->
+    Sched.fork (fun () ->
+      let _ = Reagent.run (Channel.swap ep2) "from_partner" in
+      partner_matched := true);
+    Sched.yield ();  (* let partner post its offer on ep2's outgoing queue *)
+    let r =
+      Reagent.(Treiber_stack.push s + (Channel.swap ep1 >> lift ignore))
+    in
+    Reagent.run r 42);
+  let stack_size = List.length (Reagent.get s) in
+  Printf.printf "    [partner_matched=%b stack_size=%d] "
+    !partner_matched stack_size;
+  if not !partner_matched then
+    failwith "push + swap not dispatched to swap"
+
 (* ── Run ────────────────────────────────────────────────────────────────── *)
 
 let () =
@@ -123,4 +144,6 @@ let () =
   run_test "xt_retry" test_xt_retry;
   Printf.printf "\nConcurrent stack (fibers):\n%!";
   run_test "stack_concurrent" test_stack_concurrent;
+  Printf.printf "\npush + swap dispatch (expected to fail):\n%!";
+  run_test "push_plus_swap_should_elide" test_push_plus_swap_should_elide;
   Printf.printf "\nAll tests passed.\n%!"
